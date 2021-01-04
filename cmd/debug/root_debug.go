@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
-	"godbg/target"
-
 	"github.com/c-bata/go-prompt"
+	"github.com/hitzhangjie/godbg/target"
+	cobraprompt "github.com/stromland/cobra-prompt"
+
 	"github.com/spf13/cobra"
-	"github.com/stromland/cobra-prompt"
 )
 
 const (

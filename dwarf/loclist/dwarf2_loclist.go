@@ -3,7 +3,7 @@ package loclist
 import (
 	"encoding/binary"
 
-	"lessons/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/dwarf/godwarf"
 )
 
 // Reader represents a loclist reader.

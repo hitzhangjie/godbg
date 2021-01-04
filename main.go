@@ -15,7 +15,7 @@ limitations under the License.
 */
 package main
 
-import "godbg/cmd"
+import "github.com/hitzhangjie/godbg/cmd"
 
 func main() {
 	cmd.Execute()

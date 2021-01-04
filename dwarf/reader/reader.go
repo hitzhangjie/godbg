@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"lessons/dwarf/godwarf"
-	"lessons/dwarf/op"
+	"github.com/hitzhangjie/godbg/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/dwarf/op"
 )
 
 type Reader struct {

@@ -16,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 
-	"lessons/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/dwarf/godwarf"
 )
 
 var userTestFile string
