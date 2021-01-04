@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"syscall"
 
-	"godbg/target"
+	"github.com/hitzhangjie/godbg/target"
 
 	"github.com/spf13/cobra"
 )

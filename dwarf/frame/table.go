@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"lessons/dwarf/util"
+	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
 // DWRule wrapper of rule defined for register values.

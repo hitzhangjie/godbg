@@ -13,7 +13,7 @@ import (
 	"runtime"
 	"testing"
 
-	"lessons/dwarf/util"
+	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
 func slurpGzip(path string) ([]byte, error) {

@@ -16,8 +16,8 @@ import (
 	"reflect"
 	"strconv"
 
-	"lessons/dwarf/op"
-	"lessons/dwarf/util"
+	"github.com/hitzhangjie/godbg/dwarf/op"
+	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
 const (

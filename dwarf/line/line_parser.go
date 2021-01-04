@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"lessons/dwarf/util"
+	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
 // DebugLinePrologue prologue of .debug_line data.

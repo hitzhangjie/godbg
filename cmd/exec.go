@@ -22,7 +22,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"godbg/cmd/debug"
+	"github.com/hitzhangjie/godbg/cmd/debug"
 
 	"github.com/spf13/cobra"
 )

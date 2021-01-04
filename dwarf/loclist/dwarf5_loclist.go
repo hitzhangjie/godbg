@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"lessons/dwarf/godwarf"
-	"lessons/dwarf/util"
+	"github.com/hitzhangjie/godbg/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
 // Dwarf5Reader parses and presents DWARF loclist information for DWARF version 5 and later.

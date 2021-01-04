@@ -3,7 +3,7 @@ package reader
 import (
 	"debug/dwarf"
 
-	"lessons/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/dwarf/godwarf"
 )
 
 // Variable a variable representation.
