@@ -90,8 +90,6 @@ var attachCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(attachCmd)
-
-	attachCmd.Flags().Uint32P("traceePID", "p", 0, "process's traceePID to attach")
 }
 
 // checkPid check whether traceePID is valid process's id
