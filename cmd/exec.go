@@ -33,48 +33,55 @@ var execCmd = &cobra.Command{
 	Short: "调试可执行程序",
 	Long:  `调试可执行程序`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		//fmt.Printf("exec %s\n", strings.Join(args, ""))
 
 		if len(args) != 1 {
 			return errors.New("参数错误")
 		}
 
-		// start process but don't wait it finished
-		progCmd := exec.Command(args[0])
-		progCmd.Stdin = os.Stdin
-		progCmd.Stdout = os.Stdout
-		progCmd.Stderr = os.Stderr
-		progCmd.SysProcAttr = &syscall.SysProcAttr{
-			Ptrace:     true,
-			Setpgid:    true,
-			Foreground: false,
-		}
-
-		err := progCmd.Start()
-		if err != nil {
-			return err
-		}
-
-		// wait target process stopped
-		debug.TraceePID = progCmd.Process.Pid
-
-		var (
-			status syscall.WaitStatus
-			rusage syscall.Rusage
-		)
-		_, err = syscall.Wait4(debug.TraceePID, &status, syscall.WALL, &rusage)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("process %d stopped: %v\n", debug.TraceePID, status.Stopped())
-
-		return nil
+		// start tracee and wait tracee stopped
+		return executeCommand(args[0])
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {
 		debug.NewDebugShell().Run()
-		// let target process continue
-		return syscall.PtraceCont(debug.TraceePID, 0)
+		// after debugger session finished, we should kill tracee because it's started by debugger
+		return syscall.Kill(debug.TraceePID, 0)
 	},
+}
+
+func executeCommand(execName string) error {
+
+	progCmd := exec.Command(execName)
+	progCmd.Stdin = os.Stdin
+	progCmd.Stdout = os.Stdout
+	progCmd.Stderr = os.Stderr
+
+	progCmd.SysProcAttr = &syscall.SysProcAttr{
+		Ptrace:     true,
+		Setpgid:    true,
+		Foreground: false,
+	}
+	progCmd.Env = os.Environ()
+	progCmd.Env = append(progCmd.Env, "GOMAXPROCS=1") // TODO 暂时避免多线程执行，方便调试
+
+	err := progCmd.Start()
+	if err != nil {
+		return err
+	}
+
+	// wait target process stopped
+	debug.TraceePID = progCmd.Process.Pid
+
+	var (
+		status syscall.WaitStatus
+		rusage syscall.Rusage
+	)
+	_, err = syscall.Wait4(debug.TraceePID, &status, syscall.WALL, &rusage)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("process %d stopped: %v\n", debug.TraceePID, status.Stopped())
+	return nil
 }
 
 func init() {

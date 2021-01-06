@@ -11,7 +11,7 @@ import (
 )
 
 var disassCmd = &cobra.Command{
-	Use:   "disass <locspec>",
+	Use:   "disass [options] [locspec]",
 	Short: "反汇编机器指令",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupSource,
