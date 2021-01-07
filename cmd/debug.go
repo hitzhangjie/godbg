@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	buildExecName = "./__debug_bin__"
+	BuildExecName = "./__debug_bin__"
 )
 
 // debugCmd represents the debug command
@@ -42,7 +42,7 @@ var debugCmd = &cobra.Command{
 			target = args
 		}
 
-		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-o", buildExecName}
+		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-o", BuildExecName}
 		cmdArgs = append(cmdArgs, target...)
 		buildCmd := exec.Command("go", cmdArgs...)
 
@@ -53,11 +53,11 @@ var debugCmd = &cobra.Command{
 		}
 		fmt.Printf("build ok\n")
 
-		return executeCommand(buildExecName)
+		return executeCommand(BuildExecName)
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {
 		debug.NewDebugShell().Run()
-		defer os.RemoveAll(buildExecName)
+		defer os.RemoveAll(BuildExecName)
 		// after debugger session finished, we should kill tracee because it's started by debugger
 		return syscall.Kill(debug.TraceePID, 0)
 	},

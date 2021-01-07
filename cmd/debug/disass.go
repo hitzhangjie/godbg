@@ -11,13 +11,16 @@ import (
 )
 
 var disassCmd = &cobra.Command{
-	Use:   "disass [options] [locspec]",
+	Use:   "disass [addr]",
 	Short: "反汇编机器指令",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupSource,
 	},
 	Aliases: []string{"dis", "disassemble"},
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		// TODO read addr from args[0]
+
 		max, _ := cmd.Flags().GetUint("n")
 		syntax, _ := cmd.Flags().GetString("syntax")
 
@@ -25,13 +28,13 @@ var disassCmd = &cobra.Command{
 		regs := syscall.PtraceRegs{}
 		err := syscall.PtraceGetRegs(TraceePID, &regs)
 		if err != nil {
-			return err
+			return fmt.Errorf("pid: %d, error: %v", TraceePID, err)
 		}
 
 		buf := make([]byte, 1)
 		n, err := syscall.PtracePeekText(TraceePID, uintptr(regs.PC()), buf)
 		if err != nil || n != 1 {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", TraceePID, err, n)
 		}
 		//fmt.Printf("read %d bytes, value of %x\n", n, buf[0])
 
@@ -44,7 +47,7 @@ var disassCmd = &cobra.Command{
 		dat := make([]byte, 1024)
 		n, err = syscall.PtracePeekText(TraceePID, uintptr(regs.PC()), dat)
 		if err != nil {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", TraceePID, err, n)
 		}
 		//fmt.Printf("size of text: %d\n", n)
 

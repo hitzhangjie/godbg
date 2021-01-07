@@ -15,8 +15,35 @@ limitations under the License.
 */
 package main
 
-import "github.com/hitzhangjie/godbg/cmd"
+import (
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/hitzhangjie/godbg/cmd"
+	"github.com/hitzhangjie/godbg/cmd/debug"
+)
 
 func main() {
+	go processSignals()
 	cmd.Execute()
+}
+
+func processSignals() {
+
+	ch := make(chan os.Signal, 16)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGURG)
+
+	for sig := range ch {
+
+		switch sig {
+		case syscall.SIGURG:
+			// 非协作式抢占信号，忽略这个信号
+			break
+		case syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT:
+			os.RemoveAll(cmd.BuildExecName)
+			syscall.Kill(debug.TraceePID, 0)
+			os.Exit(0)
+		}
+	}
 }
