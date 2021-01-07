@@ -6,6 +6,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/hitzhangjie/godbg/target"
 	"github.com/spf13/cobra"
 	"golang.org/x/arch/x86/x86asm"
 )
@@ -24,17 +25,19 @@ var disassCmd = &cobra.Command{
 		max, _ := cmd.Flags().GetUint("n")
 		syntax, _ := cmd.Flags().GetString("syntax")
 
+		pid := target.DebuggedProcess.Process.Pid
+
 		// 读取PC值
 		regs := syscall.PtraceRegs{}
-		err := syscall.PtraceGetRegs(TraceePID, &regs)
+		err := syscall.PtraceGetRegs(pid, &regs)
 		if err != nil {
-			return fmt.Errorf("pid: %d, error: %v", TraceePID, err)
+			return fmt.Errorf("pid: %d, error: %v", pid, err)
 		}
 
 		buf := make([]byte, 1)
-		n, err := syscall.PtracePeekText(TraceePID, uintptr(regs.PC()), buf)
+		n, err := syscall.PtracePeekText(pid, uintptr(regs.PC()), buf)
 		if err != nil || n != 1 {
-			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", TraceePID, err, n)
+			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", pid, err, n)
 		}
 		//fmt.Printf("read %d bytes, value of %x\n", n, buf[0])
 
@@ -45,9 +48,9 @@ var disassCmd = &cobra.Command{
 
 		// 查找，如果之前设置过断点，将恢复
 		dat := make([]byte, 1024)
-		n, err = syscall.PtracePeekText(TraceePID, uintptr(regs.PC()), dat)
+		n, err = syscall.PtracePeekText(pid, uintptr(regs.PC()), dat)
 		if err != nil {
-			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", TraceePID, err, n)
+			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", pid, err, n)
 		}
 		//fmt.Printf("size of text: %d\n", n)
 

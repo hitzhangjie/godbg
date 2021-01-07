@@ -34,7 +34,6 @@ const (
 )
 
 var (
-	TraceePID   int
 	breakpoints = map[uintptr]*target.Breakpoint{}
 )
 

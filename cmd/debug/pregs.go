@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/hitzhangjie/godbg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +19,8 @@ var pregsCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		regsOut := syscall.PtraceRegs{}
-		err := syscall.PtraceGetRegs(TraceePID, &regsOut)
+		pid := target.DebuggedProcess.Process.Pid
+		err := syscall.PtraceGetRegs(pid, &regsOut)
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}

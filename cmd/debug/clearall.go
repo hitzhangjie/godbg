@@ -18,8 +18,9 @@ var clearallCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//fmt.Println("clearall")
+		pid := target.DebuggedProcess.Process.Pid
 		for _, brk := range breakpoints {
-			n, err := syscall.PtracePokeData(TraceePID, brk.Addr, []byte{brk.Orig})
+			n, err := syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
 			if err != nil || n != 1 {
 				return fmt.Errorf("清空断点失败: %v", err)
 			}

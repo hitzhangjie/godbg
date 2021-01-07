@@ -25,7 +25,7 @@ var breaksCmd = &cobra.Command{
 		sort.Sort(bs)
 
 		for _, b := range bs {
-			fmt.Printf("breakpoint[%d] %#x %s\n", b.ID, b.Addr, b.Location)
+			fmt.Printf("breakpoint[%d] %#x %s\n", b.ID, b.Addr, b.Pos)
 		}
 		return nil
 	},

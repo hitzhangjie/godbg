@@ -1,4 +1,4 @@
-package target
+package symbol
 
 func StepIn() error {
 	return nil

@@ -1,4 +1,4 @@
-package target
+package symbol
 
 // FIXME symbolic layer
 func PrintType(varname string) error {

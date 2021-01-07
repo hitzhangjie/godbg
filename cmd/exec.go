@@ -17,12 +17,10 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
-	"os"
-	"os/exec"
 	"syscall"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
+	"github.com/hitzhangjie/godbg/target"
 
 	"github.com/spf13/cobra"
 )
@@ -39,49 +37,18 @@ var execCmd = &cobra.Command{
 		}
 
 		// start tracee and wait tracee stopped
-		return executeCommand(args[0])
+		dbp, err := target.NewTargetProcess(args[0])
+		if err != nil {
+			return err
+		}
+		target.DebuggedProcess = dbp
+		return nil
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {
 		debug.NewDebugShell().Run()
 		// after debugger session finished, we should kill tracee because it's started by debugger
-		return syscall.Kill(debug.TraceePID, 0)
+		return syscall.Kill(target.DebuggedProcess.Process.Pid, 0)
 	},
-}
-
-func executeCommand(execName string) error {
-
-	progCmd := exec.Command(execName)
-	progCmd.Stdin = os.Stdin
-	progCmd.Stdout = os.Stdout
-	progCmd.Stderr = os.Stderr
-
-	progCmd.SysProcAttr = &syscall.SysProcAttr{
-		Ptrace:     true,
-		Setpgid:    true,
-		Foreground: false,
-	}
-	progCmd.Env = os.Environ()
-	progCmd.Env = append(progCmd.Env, "GOMAXPROCS=1") // TODO 暂时避免多线程执行，方便调试
-
-	err := progCmd.Start()
-	if err != nil {
-		return err
-	}
-
-	// wait target process stopped
-	debug.TraceePID = progCmd.Process.Pid
-
-	var (
-		status syscall.WaitStatus
-		rusage syscall.Rusage
-	)
-	_, err = syscall.Wait4(debug.TraceePID, &status, syscall.WALL, &rusage)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("process %d stopped: %v\n", debug.TraceePID, status.Stopped())
-	return nil
 }
 
 func init() {

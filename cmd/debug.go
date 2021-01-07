@@ -22,6 +22,7 @@ import (
 	"syscall"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
+	"github.com/hitzhangjie/godbg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -37,13 +38,13 @@ var debugCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		// build and run tracee
-		target := []string{"."}
+		cmdName := []string{"."}
 		if len(args) != 0 {
-			target = args
+			cmdName = args
 		}
 
 		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-o", BuildExecName}
-		cmdArgs = append(cmdArgs, target...)
+		cmdArgs = append(cmdArgs, cmdName...)
 		buildCmd := exec.Command("go", cmdArgs...)
 
 		if buf, err := buildCmd.CombinedOutput(); err != nil {
@@ -53,13 +54,19 @@ var debugCmd = &cobra.Command{
 		}
 		fmt.Printf("build ok\n")
 
-		return executeCommand(BuildExecName)
+		// start tracee and wait tracee stopped
+		dbp, err := target.NewTargetProcess(args[0])
+		if err != nil {
+			return err
+		}
+		target.DebuggedProcess = dbp
+		return nil
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {
 		debug.NewDebugShell().Run()
 		defer os.RemoveAll(BuildExecName)
 		// after debugger session finished, we should kill tracee because it's started by debugger
-		return syscall.Kill(debug.TraceePID, 0)
+		return syscall.Kill(target.DebuggedProcess.Process.Pid, 0)
 	},
 }
 

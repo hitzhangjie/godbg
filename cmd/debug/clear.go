@@ -39,7 +39,8 @@ var clearCmd = &cobra.Command{
 		}
 
 		// 移除断点
-		n, err := syscall.PtracePokeData(TraceePID, brk.Addr, []byte{brk.Orig})
+		pid := target.DebuggedProcess.Process.Pid
+		n, err := syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
 		if err != nil || n != 1 {
 			return fmt.Errorf("移除断点失败: %v", err)
 		}
