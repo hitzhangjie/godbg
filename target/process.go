@@ -6,10 +6,13 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -18,11 +21,11 @@ var (
 
 // TargetProcess 被调试进程信息
 type TargetProcess struct {
-	Process     *os.Process // 进程信息
-	Command     string      // 进程启动命令，方便重启调试
-	Args        []string    // 进程启动参数，方便重启调试
-	Threads     []Thread    // 包含的线程列表
-	Breakpoints Breakpoints // 已经添加的断点
+	Process     *os.Process     // 进程信息
+	Command     string          // 进程启动命令，方便重启调试
+	Args        []string        // 进程启动参数，方便重启调试
+	Threads     map[int]*Thread // 包含的线程列表,k=tid,v=thread
+	Breakpoints Breakpoints     // 已经添加的断点
 }
 
 // NewTargetProcess 创建一个待调试进程
@@ -31,15 +34,22 @@ func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
 		Process:     nil,
 		Command:     cmd,
 		Args:        args,
-		Threads:     []Thread{},
+		Threads:     map[int]*Thread{},
 		Breakpoints: Breakpoints{},
 	}
 
-	p, err := executeCommand(cmd, args...)
+	// start and trace
+	p, err := launchCommand(cmd, args...)
 	if err != nil {
 		return nil, err
 	}
 	target.Process = p
+
+	// trace newly created thread
+	err = syscall.PtraceSetOptions(p.Pid, syscall.PTRACE_O_TRACECLONE)
+	if err != nil {
+		return nil, err
+	}
 
 	return &target, nil
 }
@@ -50,10 +60,11 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		Process:     nil,
 		Command:     "",
 		Args:        nil,
-		Threads:     []Thread{},
+		Threads:     map[int]*Thread{},
 		Breakpoints: Breakpoints{},
 	}
 
+	// attach to running process (thread)
 	err := attach(pid)
 	if err != nil {
 		return nil, err
@@ -65,6 +76,8 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 	}
 	target.Process = p
 
+	// initialize the command and arguments,
+	// after then, we could support restart command.
 	target.Command, err = readProcComm(pid)
 	if err != nil {
 		return nil, err
@@ -74,6 +87,9 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// attach to other threads, and prepare to trace newly created thread
+	target.updateThreadList()
 
 	return &target, nil
 }
@@ -117,8 +133,20 @@ func readProcCommArgs(pid int) ([]string, error) {
 	return args, nil
 }
 
-// executeCommand execute `execName` with `args`
-func executeCommand(execName string, args ...string) (*os.Process, error) {
+// launchCommand execute `execName` with `args`
+//
+// 为了方便调试，除了跟踪主线程，还需要考虑跟踪后续新创建的线程，linux 2.5.46中引入了以下ptrace选项，
+// 通过设置该选项可以使得tracer自动跟踪新创建线程。
+//
+// PTRACE_O_TRACECLONE (since Linux 2.5.46)
+//                     Stop the tracee at the next clone(2) and
+//                     automatically start tracing the newly cloned
+//                     process, which will start with a SIGSTOP, or
+//                     PTRACE_EVENT_STOP if PTRACE_SEIZE was used.  A
+//                     waitpid(2) by the tracer will return a status value.
+//
+// see more info by `man 2 ptrace`.
+func launchCommand(execName string, args ...string) (*os.Process, error) {
 
 	progCmd := exec.Command(execName, args...)
 	progCmd.Stdin = os.Stdin
@@ -126,17 +154,13 @@ func executeCommand(execName string, args ...string) (*os.Process, error) {
 	progCmd.Stderr = os.Stderr
 
 	progCmd.SysProcAttr = &syscall.SysProcAttr{
-		Ptrace:     true,
+		Ptrace:     true, // implies PTRACE_TRACEME
 		Setpgid:    true,
 		Foreground: false,
 	}
 	progCmd.Env = os.Environ()
 
-	// note:
-	// - 启动时设置了PTRACEME，不需要设置环境变量GOMAXPROCS=1
-	// - 如果是attach的话，也不能保证tracee启动时有使用GOMAXPROCS=1，需要枚举线程列表attach
-	//progCmd.Env = append(progCmd.Env, "GOMAXPROCS=1")
-
+	// start the process
 	err := progCmd.Start()
 	if err != nil {
 		return nil, err
@@ -151,8 +175,8 @@ func executeCommand(execName string, args ...string) (*os.Process, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	fmt.Printf("process %d stopped: %v\n", progCmd.Process.Pid, status.Stopped())
+
 	return progCmd.Process, nil
 }
 
@@ -181,6 +205,52 @@ func attach(pid int) error {
 		return fmt.Errorf("process %d waited error: %v\n", pid, err)
 	}
 	fmt.Printf("process %d stopped: %v\n", pid, status.Stopped())
+	return nil
+}
+
+func (t *TargetProcess) updateThreadList() error {
+	tids, _ := filepath.Glob(fmt.Sprintf("/proc/%d/task/*", t.Process.Pid))
+	for _, tidpath := range tids {
+		tidstr := filepath.Base(tidpath)
+		tid, err := strconv.Atoi(tidstr)
+		if err != nil {
+			return err
+		}
+		if tid == t.Process.Pid {
+			continue
+		}
+
+		// attach to thread
+		err = syscall.PtraceAttach(tid)
+		if err != nil && err != unix.EPERM {
+			// Maybe we have traced tid via PTRACE_O_TRACECLONE.
+			// If we try to attach to it again, it will fail.
+			// We should ignore this kind of error.
+			return err
+		}
+
+		// wait thread
+		var status unix.WaitStatus
+		wpid, err := unix.Wait4(tid, &status, unix.WALL, nil)
+		if err != nil {
+			return err
+		}
+		if status.Exited() {
+			fmt.Printf("thread already exited: %d\n", wpid)
+		}
+
+		// update thread
+		err = syscall.PtraceSetOptions(tid, syscall.PTRACE_O_TRACECLONE)
+		if err != nil {
+			return err
+		}
+
+		t.Threads[tid] = &Thread{
+			Tid:     tid,
+			Status:  status,
+			Process: t,
+		}
+	}
 	return nil
 }
 

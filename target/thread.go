@@ -1,6 +1,9 @@
 package target
 
+import "golang.org/x/sys/unix"
+
 type Thread struct {
 	Tid     int
-	Command string
+	Status  unix.WaitStatus
+	Process *TargetProcess
 }

@@ -13,4 +13,5 @@ require (
 	github.com/stromland/cobra-prompt v0.0.0-20181123224253-940a0a2bd0d3
 	go.uber.org/atomic v1.7.0
 	golang.org/x/arch v0.0.0-20201008161808-52c3e6f60cff
+	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff
 )
