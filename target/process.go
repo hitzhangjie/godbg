@@ -131,7 +131,11 @@ func executeCommand(execName string, args ...string) (*os.Process, error) {
 		Foreground: false,
 	}
 	progCmd.Env = os.Environ()
-	progCmd.Env = append(progCmd.Env, "GOMAXPROCS=1") // TODO 暂时避免多线程执行，方便调试
+
+	// note:
+	// - 启动时设置了PTRACEME，不需要设置环境变量GOMAXPROCS=1
+	// - 如果是attach的话，也不能保证tracee启动时有使用GOMAXPROCS=1，需要枚举线程列表attach
+	//progCmd.Env = append(progCmd.Env, "GOMAXPROCS=1")
 
 	err := progCmd.Start()
 	if err != nil {

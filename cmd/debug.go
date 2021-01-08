@@ -55,7 +55,7 @@ var debugCmd = &cobra.Command{
 		fmt.Printf("build ok\n")
 
 		// start tracee and wait tracee stopped
-		dbp, err := target.NewTargetProcess(args[0])
+		dbp, err := target.NewTargetProcess(BuildExecName)
 		if err != nil {
 			return err
 		}
