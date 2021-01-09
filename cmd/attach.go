@@ -54,8 +54,14 @@ var attachCmd = &cobra.Command{
 			fmt.Printf("%s invalid traceePID\n", os.Args[2])
 			os.Exit(1)
 		}
-		target.DebuggedProcess, err = target.AttachTargetProcess(int(pid))
-		return err
+
+		dbp, err := target.AttachTargetProcess(int(pid))
+		if err != nil {
+			return err
+		}
+		target.DebuggedProcess = dbp
+		target.DebuggedProcess.Kind = target.ATTACH
+		return nil
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {
 		debug.NewDebugShell().Run()

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/target"
 	"github.com/spf13/cobra"
@@ -35,22 +34,10 @@ var breakCmd = &cobra.Command{
 			return fmt.Errorf("invalid locspec: %v", err)
 		}
 		addr := uintptr(v)
-		pid := target.DebuggedProcess.Process.Pid
 
-		orig := [1]byte{}
-		n, err := syscall.PtracePeekText(pid, addr, orig[:])
-		if err != nil || n != 1 {
-			return fmt.Errorf("peek text, %d bytes, error: %v", n, err)
-		}
-		breakpoint, err := target.NewBreakpoint(addr, orig[0], "")
+		_, err = target.DebuggedProcess.AddBreakpoint(addr)
 		if err != nil {
-			return fmt.Errorf("add breakpoint error: %v", err)
-		}
-		breakpoints[addr] = &breakpoint
-
-		n, err = syscall.PtracePokeText(pid, addr, []byte{0xCC})
-		if err != nil || n != 1 {
-			return fmt.Errorf("poke text, %d bytes, error: %v", n, err)
+			return err
 		}
 		fmt.Printf("添加断点成功\n")
 		return nil

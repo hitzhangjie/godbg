@@ -17,47 +17,54 @@ var stepCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//fmt.Println("step")
-		pid := target.DebuggedProcess.Process.Pid
+		dbp := target.DebuggedProcess
+
 		// 读取PC值
-		regs := syscall.PtraceRegs{}
-		err := syscall.PtraceGetRegs(pid, &regs)
+		regs, err := dbp.ReadRegister()
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}
 
 		buf := make([]byte, 1)
-		n, err := syscall.PtracePeekText(pid, uintptr(regs.PC()), buf)
+		n, err := dbp.ReadMemory(uintptr(regs.PC()), buf)
 		if err != nil || n != 1 {
 			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
 
 		// read a breakpoint
 		if buf[0] == 0xCC {
+			brk, err := dbp.ClearBreakpoint(uintptr(regs.PC()))
+			if err != nil {
+				return fmt.Errorf("清除断点失败, err: %v", err)
+			}
+			defer dbp.AddBreakpoint(brk.Addr)
+
+			// rewind 1 byte
 			regs.SetPC(regs.PC() - 1)
-			// TODO refactor breakpoint.Disable()/Enable() methods
-			orig := breakpoints[uintptr(regs.PC())].Orig
-			n, err := syscall.PtracePokeText(pid, uintptr(regs.PC()), []byte{orig})
-			if err != nil || n != 1 {
-				return fmt.Errorf("poke text error: %v, bytes: %d", err, n)
+			err = dbp.WriteRegister(regs)
+			if err != nil {
+				return err
 			}
 		}
 
-		err = syscall.PtraceSingleStep(pid)
+		err = dbp.SingleStep()
 		if err != nil {
 			return fmt.Errorf("single step error: %v", err)
 		}
 
 		// MUST: 当发起了某些对tracee执行控制的ptrace request之后，要调用syscall.Wait等待并获取tracee状态变化
-		var wstatus syscall.WaitStatus
-		var rusage syscall.Rusage
+		var (
+			wstatus syscall.WaitStatus
+			rusage  syscall.Rusage
+			pid     = dbp.Process.Pid
+		)
 		_, err = syscall.Wait4(pid, &wstatus, syscall.WALL, &rusage)
 		if err != nil {
 			return fmt.Errorf("wait error: %v", err)
 		}
 
 		// display current pc
-		regs = syscall.PtraceRegs{}
-		err = syscall.PtraceGetRegs(pid, &regs)
+		regs, err = dbp.ReadRegister()
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}

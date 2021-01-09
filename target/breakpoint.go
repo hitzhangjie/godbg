@@ -18,17 +18,16 @@ type Breakpoint struct {
 	Enabled bool    // 断点是否启用
 }
 
-func NewBreakpoint(addr uintptr, orig byte, location string) (Breakpoint, error) {
-	b := Breakpoint{
+func newBreakPoint(addr uintptr, orig byte, location string) *Breakpoint {
+	return &Breakpoint{
 		ID:   seqNo.Add(1),
 		Addr: addr,
 		Orig: orig,
 		Pos:  location,
 	}
-	return b, nil
 }
 
-type Breakpoints []Breakpoint
+type Breakpoints []*Breakpoint
 
 func (b Breakpoints) Len() int {
 	return len(b)

@@ -2,7 +2,6 @@ package debug
 
 import (
 	"fmt"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/target"
 
@@ -18,15 +17,12 @@ var clearallCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//fmt.Println("clearall")
-		pid := target.DebuggedProcess.Process.Pid
-		for _, brk := range breakpoints {
-			n, err := syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
-			if err != nil || n != 1 {
-				return fmt.Errorf("清空断点失败: %v", err)
+		for _, brk := range target.DebuggedProcess.Breakpoints {
+			_, err := target.DebuggedProcess.ClearBreakpoint(brk.Addr)
+			if err != nil {
+				return fmt.Errorf("清除断点%d失败\n", brk.ID)
 			}
 		}
-
-		breakpoints = map[uintptr]*target.Breakpoint{}
 		fmt.Println("清空断点成功")
 		return nil
 	},

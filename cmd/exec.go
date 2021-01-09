@@ -42,6 +42,7 @@ var execCmd = &cobra.Command{
 			return err
 		}
 		target.DebuggedProcess = dbp
+		target.DebuggedProcess.Kind = target.EXEC
 		return nil
 	},
 	PostRunE: func(cmd *cobra.Command, args []string) error {

@@ -19,8 +19,8 @@ var breaksCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bs := target.Breakpoints{}
-		for _, b := range breakpoints {
-			bs = append(bs, *b)
+		for _, b := range target.DebuggedProcess.Breakpoints {
+			bs = append(bs, b)
 		}
 		sort.Sort(bs)
 

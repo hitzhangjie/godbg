@@ -3,7 +3,6 @@ package debug
 import (
 	"fmt"
 	"os"
-	"syscall"
 	"text/tabwriter"
 
 	"github.com/hitzhangjie/godbg/target"
@@ -12,45 +11,54 @@ import (
 )
 
 var disassCmd = &cobra.Command{
-	Use:   "disass [addr]",
+	Use:   "disass",
 	Short: "反汇编机器指令",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupSource,
 	},
 	Aliases: []string{"dis", "disassemble"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-
-		// TODO read addr from args[0]
-
-		max, _ := cmd.Flags().GetUint("n")
-		syntax, _ := cmd.Flags().GetString("syntax")
-
-		pid := target.DebuggedProcess.Process.Pid
+		var (
+			max, _    = cmd.Flags().GetUint("n")
+			syntax, _ = cmd.Flags().GetString("syntax")
+			err       error
+		)
 
 		// 读取PC值
-		regs := syscall.PtraceRegs{}
-		err := syscall.PtraceGetRegs(pid, &regs)
+		regs, err := target.DebuggedProcess.ReadRegister()
 		if err != nil {
-			return fmt.Errorf("pid: %d, error: %v", pid, err)
+			return err
 		}
+		fmt.Printf("read PC: %#x\n", regs.PC())
 
+		// 检测PC处是否为断点
 		buf := make([]byte, 1)
-		n, err := syscall.PtracePeekText(pid, uintptr(regs.PC()), buf)
+		n, err := target.DebuggedProcess.ReadMemory(uintptr(regs.PC()), buf)
 		if err != nil || n != 1 {
-			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", pid, err, n)
+			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
-		//fmt.Printf("read %d bytes, value of %x\n", n, buf[0])
 
 		// read a breakpoint
 		if buf[0] == 0xCC {
+			brk, err := target.DebuggedProcess.ClearBreakpoint(uintptr(regs.PC()))
+			if err != nil {
+				return err
+			}
+			defer target.DebuggedProcess.AddBreakpoint(brk.Addr)
+
+			// rewind 1 byte
 			regs.SetPC(regs.PC() - 1)
+			err = target.DebuggedProcess.WriteRegister(regs)
+			if err != nil {
+				return err
+			}
 		}
 
-		// 查找，如果之前设置过断点，将恢复
+		// 指令数据
 		dat := make([]byte, 1024)
-		n, err = syscall.PtracePeekText(pid, uintptr(regs.PC()), dat)
-		if err != nil {
-			return fmt.Errorf("pid: %d, peek text error: %v, bytes: %d", pid, err, n)
+		n, err = target.DebuggedProcess.ReadMemory(uintptr(regs.PC()), dat)
+		if err != nil || n == 0 {
+			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
 		//fmt.Printf("size of text: %d\n", n)
 
@@ -59,6 +67,7 @@ var disassCmd = &cobra.Command{
 		// 反汇编这里的指令数据
 		offset := 0
 		count := 0
+
 		for uint(count) < max {
 			inst, err := x86asm.Decode(dat[offset:], 64)
 			if err != nil {
@@ -76,6 +85,7 @@ var disassCmd = &cobra.Command{
 			count++
 		}
 		tw.Flush()
+
 		return nil
 	},
 }

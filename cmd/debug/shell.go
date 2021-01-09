@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/c-bata/go-prompt"
-	"github.com/hitzhangjie/godbg/target"
 	cobraprompt "github.com/stromland/cobra-prompt"
 
 	"github.com/spf13/cobra"
@@ -31,10 +30,6 @@ const (
 
 const (
 	suggestionListSourceFiles = "ListSourceFiles"
-)
-
-var (
-	breakpoints = map[uintptr]*target.Breakpoint{}
 )
 
 var debugRootCmd = &cobra.Command{

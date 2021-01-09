@@ -1,15 +1,14 @@
 package target
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strconv"
-	"strings"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -21,33 +20,58 @@ var (
 
 // TargetProcess 被调试进程信息
 type TargetProcess struct {
-	Process     *os.Process     // 进程信息
-	Command     string          // 进程启动命令，方便重启调试
-	Args        []string        // 进程启动参数，方便重启调试
-	Threads     map[int]*Thread // 包含的线程列表,k=tid,v=thread
-	Breakpoints Breakpoints     // 已经添加的断点
+	Process     *os.Process             // 进程信息
+	Command     string                  // 进程启动命令，方便重启调试
+	Args        []string                // 进程启动参数，方便重启调试
+	Threads     map[int]*Thread         // 包含的线程列表,k=tid,v=thread
+	Breakpoints map[uintptr]*Breakpoint // 已经添加的断点
+	Kind        Kind                    // 发起调试的类型
+
+	once       *sync.Once
+	ptraceCh   chan func() // ptrace请求统一发送到这里，由专门协程处理
+	ptraceDone chan int    // ptrace请求完成
+	stopCh     chan int    // 通知需要停止调试
 }
+type Kind int
+
+const (
+	DEBUG Kind = iota
+	EXEC
+	ATTACH
+)
 
 // NewTargetProcess 创建一个待调试进程
 func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
-	target := TargetProcess{
+	var (
+		target TargetProcess
+		err    error
+	)
+	target = TargetProcess{
 		Process:     nil,
 		Command:     cmd,
 		Args:        args,
 		Threads:     map[int]*Thread{},
-		Breakpoints: Breakpoints{},
+		Breakpoints: map[uintptr]*Breakpoint{},
+
+		once:       &sync.Once{},
+		ptraceCh:   make(chan func()),
+		ptraceDone: make(chan int),
+		stopCh:     make(chan int),
 	}
 
-	// start and trace
-	p, err := launchCommand(cmd, args...)
-	if err != nil {
-		return nil, err
-	}
-	target.Process = p
+	target.ExecPtrace(func() {
+		// start and trace
+		target.Process, err = target.launchCommand(cmd, args...)
+		if err != nil {
+			return
+		}
 
-	// trace newly created thread
-	err = syscall.PtraceSetOptions(p.Pid, syscall.PTRACE_O_TRACECLONE)
+		// trace newly created thread
+		err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
+	})
+
 	if err != nil {
+		target.StopPtrace()
 		return nil, err
 	}
 
@@ -56,81 +80,50 @@ func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
 
 // AttachTargetProcess trace一个目标进程（准确地说是线程）
 func AttachTargetProcess(pid int) (*TargetProcess, error) {
-	target := TargetProcess{
+	var (
+		target TargetProcess
+		err    error
+	)
+	target = TargetProcess{
 		Process:     nil,
 		Command:     "",
 		Args:        nil,
 		Threads:     map[int]*Thread{},
-		Breakpoints: Breakpoints{},
+		Breakpoints: map[uintptr]*Breakpoint{},
 	}
 
-	// attach to running process (thread)
-	err := attach(pid)
+	target.ExecPtrace(func() {
+		// Attach to running process (thread)
+		if err = target.Attach(pid); err != nil {
+			return
+		}
+
+		if target.Process, err = os.FindProcess(pid); err != nil {
+			return
+		}
+
+		// initialize the command and arguments,
+		// after then, we could support restart command.
+		if target.Command, err = readProcComm(pid); err != nil {
+			return
+		}
+
+		if target.Args, err = readProcCommArgs(pid); err != nil {
+			return
+		}
+
+		// Attach to other threads, and prepare to trace newly created thread
+		if err = target.updateThreadList(); err != nil {
+			return
+		}
+	})
+
 	if err != nil {
+		target.StopPtrace()
 		return nil, err
 	}
-
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return nil, err
-	}
-	target.Process = p
-
-	// initialize the command and arguments,
-	// after then, we could support restart command.
-	target.Command, err = readProcComm(pid)
-	if err != nil {
-		return nil, err
-	}
-
-	target.Args, err = readProcCommArgs(pid)
-	if err != nil {
-		return nil, err
-	}
-
-	// attach to other threads, and prepare to trace newly created thread
-	target.updateThreadList()
 
 	return &target, nil
-}
-
-// readProcComm read /proc/pid/comm or /proc/pid/stat to load the command line of process.
-func readProcComm(pid int) (string, error) {
-	comm, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
-	if err == nil {
-		// removes newline character
-		comm = bytes.TrimSuffix(comm, []byte("\n"))
-	}
-
-	if comm == nil || len(comm) <= 0 {
-		stat, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-		if err != nil {
-			return "", fmt.Errorf("could not read proc stat: %v", err)
-		}
-		expr := fmt.Sprintf("%d\\s*\\((.*)\\)", pid)
-		rexp, err := regexp.Compile(expr)
-		if err != nil {
-			return "", fmt.Errorf("regexp compile error: %v", err)
-		}
-		match := rexp.FindSubmatch(stat)
-		if match == nil {
-			return "", fmt.Errorf("no match found using regexp '%s' in /proc/%d/stat", expr, pid)
-		}
-		comm = match[1]
-	}
-
-	cmdStr := strings.ReplaceAll(string(comm), "%", "%%")
-	return cmdStr, nil
-}
-
-// readProcCommArgs read /proc/pid/cmdline to load the command arguments of process
-func readProcCommArgs(pid int) ([]string, error) {
-	dat, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return nil, err
-	}
-	args := strings.Split(string(dat), string([]byte{0}))[1:]
-	return args, nil
 }
 
 // launchCommand execute `execName` with `args`
@@ -146,7 +139,7 @@ func readProcCommArgs(pid int) ([]string, error) {
 //                     waitpid(2) by the tracer will return a status value.
 //
 // see more info by `man 2 ptrace`.
-func launchCommand(execName string, args ...string) (*os.Process, error) {
+func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Process, error) {
 
 	progCmd := exec.Command(execName, args...)
 	progCmd.Stdin = os.Stdin
@@ -180,15 +173,41 @@ func launchCommand(execName string, args ...string) (*os.Process, error) {
 	return progCmd.Process, nil
 }
 
-// attach attach to process pid
-func attach(pid int) error {
+func (t *TargetProcess) ExecPtrace(fn func()) {
+	t.once.Do(func() {
+		go func() {
+			// ensure all ptrace requests goes via the same tracer (thread)
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+
+			for {
+				select {
+				case reqFn := <-t.ptraceCh:
+					reqFn()
+					t.ptraceDone <- 1
+				case <-t.stopCh:
+					break
+				}
+			}
+		}()
+	})
+	t.ptraceCh <- fn
+	<-t.ptraceDone
+}
+
+func (t *TargetProcess) StopPtrace() {
+	close(t.stopCh)
+}
+
+// Attach Attach to process pid
+func (t *TargetProcess) Attach(pid int) error {
 
 	// check traceePID
-	if !checkPid(int(pid)) {
+	if !checkPid(pid) {
 		return fmt.Errorf("process %d not existed\n", pid)
 	}
 
-	// attach
+	// Attach
 	err := syscall.PtraceAttach(pid)
 	if err != nil {
 		return fmt.Errorf("process %d attached error: %v\n", pid, err)
@@ -208,23 +227,66 @@ func attach(pid int) error {
 	return nil
 }
 
-func (t *TargetProcess) updateThreadList() error {
+func (t *TargetProcess) Detach() error {
+
+	// check traceePID
+	if !checkPid(t.Process.Pid) {
+		return fmt.Errorf("process %d not existed\n", t.Process.Pid)
+	}
+
+	// Detach all threads
+	tids, err := t.loadThreadList()
+	if err != nil {
+		return err
+	}
+
+	for _, tid := range tids {
+		err := syscall.PtraceDetach(tid)
+		if err != nil {
+			//return fmt.Errorf("thread %d detached error: %v\n", tid, err)
+			fmt.Printf("thread %d detached error: %v\n", tid, err)
+			continue
+		}
+		fmt.Printf("thread %d detached succ\n", tid)
+
+		var status syscall.WaitStatus
+		_, err = syscall.Wait4(tid, &status, 0, nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("thread %d detached, status: %v\n", status)
+	}
+	return nil
+}
+
+func (t *TargetProcess) loadThreadList() ([]int, error) {
+	threadIDs := []int{}
+
 	tids, _ := filepath.Glob(fmt.Sprintf("/proc/%d/task/*", t.Process.Pid))
 	for _, tidpath := range tids {
 		tidstr := filepath.Base(tidpath)
 		tid, err := strconv.Atoi(tidstr)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if tid == t.Process.Pid {
-			continue
-		}
+		threadIDs = append(threadIDs, tid)
+	}
+	return threadIDs, nil
+}
 
-		// attach to thread
+func (t *TargetProcess) updateThreadList() error {
+
+	tids, err := t.loadThreadList()
+	if err != nil {
+		return err
+	}
+
+	for _, tid := range tids {
+		// Attach to thread
 		err = syscall.PtraceAttach(tid)
 		if err != nil && err != unix.EPERM {
 			// Maybe we have traced tid via PTRACE_O_TRACECLONE.
-			// If we try to attach to it again, it will fail.
+			// If we try to Attach to it again, it will fail.
 			// We should ignore this kind of error.
 			return err
 		}
@@ -290,12 +352,60 @@ func (t *TargetProcess) ListBreakpoints() {
 
 // AddBreakpoint 在地址addr处添加断点，返回新创建的断点
 func (t *TargetProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
-	return nil, nil
+	var (
+		breakpoint *Breakpoint
+		err        error
+	)
+
+	t.ExecPtrace(func() {
+		pid := DebuggedProcess.Process.Pid
+
+		orig := [1]byte{}
+		n, err := syscall.PtracePeekText(pid, addr, orig[:])
+		if err != nil || n != 1 {
+			err = fmt.Errorf("peek text, %d bytes, error: %v", n, err)
+			return
+		}
+
+		breakpoint = newBreakPoint(addr, orig[0], "")
+		DebuggedProcess.Breakpoints[addr] = breakpoint
+
+		n, err = syscall.PtracePokeText(pid, addr, []byte{0xCC})
+		if err != nil || n != 1 {
+			err = fmt.Errorf("poke text, %d bytes, error: %v", n, err)
+			return
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return breakpoint, nil
 }
 
-// ClearBreakpoint 删除编号为id的断点，会返回id对应的断点
-func (t *TargetProcess) ClearBreakpoint(id uintptr) (*Breakpoint, error) {
-	return nil, nil
+// ClearBreakpoint 删除addr处的断点
+func (t *TargetProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
+
+	brk, ok := t.Breakpoints[addr]
+	if !ok {
+		return nil, errors.New("断点不存在")
+	}
+
+	// 移除断点
+	pid := DebuggedProcess.Process.Pid
+
+	var err error
+	t.ExecPtrace(func() {
+		var n int
+		n, err = syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
+		if err != nil || n != 1 {
+			err = fmt.Errorf("移除断点失败: %v", err)
+			return
+		}
+		delete(t.Breakpoints, brk.Addr)
+	})
+
+	return brk, nil
 }
 
 // ClearAll 删除所有已添加的断点
@@ -305,7 +415,20 @@ func (t *TargetProcess) ClearAll() error {
 
 // Continue 执行到下一个断点处
 func (t *TargetProcess) Continue() error {
-	return nil
+	var err error
+	t.ExecPtrace(func() {
+		err = syscall.PtraceCont(t.Process.Pid, 0)
+	})
+	return err
+}
+
+// SingleStep 执行一条指令
+func (t *TargetProcess) SingleStep() error {
+	var err error
+	t.ExecPtrace(func() {
+		err = syscall.PtraceSingleStep(t.Process.Pid)
+	})
+	return err
 }
 
 // --------------------------------------------------------------------
@@ -317,9 +440,17 @@ func (t *TargetProcess) Disassemble(addr uintptr) ([]byte, error) {
 
 // --------------------------------------------------------------------
 
-// ReadMemory 读取内存地址addr处的size字节数据
-func (t *TargetProcess) ReadMemory(addr uintptr, size int) ([]byte, error) {
-	return nil, nil
+// ReadMemory 读取内存地址addr处的数据，并存储到buf中，函数返回实际读取的字节数
+func (t *TargetProcess) ReadMemory(addr uintptr, buf []byte) (int, error) {
+	var (
+		n   int
+		err error
+	)
+	t.ExecPtrace(func() {
+		// PtracePeekText 与 PtracePeekData 效果相同
+		n, err = syscall.PtracePeekText(t.Process.Pid, addr, buf)
+	})
+	return n, err
 }
 
 // SetVariable 设置内存地址addr处的值为value
@@ -327,14 +458,35 @@ func (t *TargetProcess) WriteMemory(addr uintptr, value []byte) error {
 	return nil
 }
 
-// ReadRegister 读取寄存器reg的数据
-func (t *TargetProcess) ReadRegister(reg int) ([]byte, error) {
-	return nil, nil
+// ReadRegister 读取寄存器的数据
+func (t *TargetProcess) ReadRegister() (*syscall.PtraceRegs, error) {
+	var (
+		regs syscall.PtraceRegs
+		err  error
+	)
+
+	t.ExecPtrace(func() {
+		pid := DebuggedProcess.Process.Pid
+		err = syscall.PtraceGetRegs(pid, &regs)
+		if err != nil {
+			err = fmt.Errorf("get regs error: %v", err)
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return &regs, nil
 }
 
 // WriteRegister 设置寄存器reg的值为value
-func (t *TargetProcess) WriteRegister(reg int, value []byte) error {
-	return nil
+func (t *TargetProcess) WriteRegister(regs *syscall.PtraceRegs) error {
+	var err error
+	t.ExecPtrace(func() {
+		pid := DebuggedProcess.Process.Pid
+		err = syscall.PtraceSetRegs(pid, regs)
+	})
+	return err
 }
 
 // --------------------------------------------------------------------

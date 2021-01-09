@@ -3,7 +3,6 @@ package debug
 import (
 	"errors"
 	"fmt"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/target"
 
@@ -26,7 +25,7 @@ var clearCmd = &cobra.Command{
 
 		// 查找断点
 		var brk *target.Breakpoint
-		for _, b := range breakpoints {
+		for _, b := range target.DebuggedProcess.Breakpoints {
 			if b.ID != id {
 				continue
 			}
@@ -39,13 +38,10 @@ var clearCmd = &cobra.Command{
 		}
 
 		// 移除断点
-		pid := target.DebuggedProcess.Process.Pid
-		n, err := syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
-		if err != nil || n != 1 {
-			return fmt.Errorf("移除断点失败: %v", err)
+		_, err = target.DebuggedProcess.ClearBreakpoint(brk.Addr)
+		if err != nil {
+			return err
 		}
-		delete(breakpoints, brk.Addr)
-
 		fmt.Println("移除断点成功")
 		return nil
 	},

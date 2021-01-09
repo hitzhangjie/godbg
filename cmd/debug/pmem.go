@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"unsafe"
 
@@ -34,11 +33,9 @@ var pmemCmd = &cobra.Command{
 		// calculate size of memory to read
 		readAt, _ := strconv.ParseUint(addr, 0, 64)
 		bytes := count * size
-
-		pid := target.DebuggedProcess.Process.Pid
-
 		buf := make([]byte, bytes, bytes)
-		n, err := syscall.PtracePeekData(pid, uintptr(readAt), buf)
+
+		n, err := target.DebuggedProcess.ReadMemory(uintptr(readAt), buf)
 		if err != nil || n != int(bytes) {
 			return fmt.Errorf("read %d bytes, error: %v", n, err)
 		}
