@@ -12,6 +12,7 @@ import (
 
 type parsefunc func(*parseContext) parsefunc
 
+// parseContext context which helps parsing the CIE and FDEs stored in .debug_frame
 type parseContext struct {
 	staticBase uint64
 
@@ -43,10 +44,12 @@ func Parse(data []byte, order binary.ByteOrder, staticBase uint64, ptrSize int) 
 	return pctx.entries
 }
 
+// cieEntry determines if data is the magic number of CIE
 func cieEntry(data []byte) bool {
 	return bytes.Equal(data, []byte{0xff, 0xff, 0xff, 0xff})
 }
 
+// parselength parse the length of CIE or FDE
 func parselength(ctx *parseContext) parsefunc {
 	binary.Read(ctx.buf, binary.LittleEndian, &ctx.length)
 
@@ -55,9 +58,12 @@ func parselength(ctx *parseContext) parsefunc {
 		return parselength
 	}
 
+	// parsing CIE_id of CIE
+	// parsing CIE_pointer of FDE
 	var data = ctx.buf.Next(4)
 
-	ctx.length -= 4 // take off the length of the CIE id / CIE pointer.
+	// take off the length of the CIE id / CIE pointer.
+	ctx.length -= 4
 
 	if cieEntry(data) {
 		ctx.common = &CommonInformationEntry{Length: ctx.length, staticBase: ctx.staticBase}
@@ -68,13 +74,17 @@ func parselength(ctx *parseContext) parsefunc {
 	return parseFDE
 }
 
+// parseFDE parse FDE entry
 func parseFDE(ctx *parseContext) parsefunc {
 	var num uint64
 	r := ctx.buf.Next(int(ctx.length))
-
 	reader := bytes.NewReader(r)
+
+	// parsing initial_location of FDE
 	num, _ = util.ReadUintRaw(reader, binary.LittleEndian, ctx.ptrSize)
 	ctx.frame.begin = num + ctx.staticBase
+
+	// parsing address_range of FDE
 	num, _ = util.ReadUintRaw(reader, binary.LittleEndian, ctx.ptrSize)
 	ctx.frame.size = num
 
@@ -82,15 +92,15 @@ func parseFDE(ctx *parseContext) parsefunc {
 	// otherwise compares won't work.
 	ctx.entries = append(ctx.entries, ctx.frame)
 
-	// The rest of this entry consists of the instructions
-	// so we can just grab all of the data from the buffer
-	// cursor to length.
+	// parsing instructions of FDE
 	ctx.frame.Instructions = r[2*ctx.ptrSize:]
 	ctx.length = 0
 
+	// prepare to parse next FDE or CIE
 	return parselength
 }
 
+// parseCIE parse CIE entry
 func parseCIE(ctx *parseContext) parsefunc {
 	data := ctx.buf.Next(int(ctx.length))
 	buf := bytes.NewBuffer(data)
@@ -114,6 +124,8 @@ func parseCIE(ctx *parseContext) parsefunc {
 	// so we can just grab all of the data from the buffer
 	// cursor to length.
 	ctx.common.InitialInstructions = buf.Bytes() //ctx.buf.Next(int(ctx.length))
+
+	// prepare to parse FDEs following this CIE
 	ctx.length = 0
 
 	return parselength

@@ -2,7 +2,6 @@ package frame
 
 import (
 	"encoding/binary"
-	"fmt"
 	"sort"
 )
 
@@ -55,15 +54,6 @@ type FrameDescriptionEntries []*FrameDescriptionEntry
 
 func newFrameIndex() FrameDescriptionEntries {
 	return make(FrameDescriptionEntries, 0, 1000)
-}
-
-// ErrNoFDEForPC FDE for PC not found error
-type ErrNoFDEForPC struct {
-	PC uint64
-}
-
-func (err *ErrNoFDEForPC) Error() string {
-	return fmt.Sprintf("could not find FDE for PC %#v", err.PC)
 }
 
 // FDEForPC returns the Frame Description Entry for the given PC.

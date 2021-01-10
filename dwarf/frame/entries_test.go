@@ -20,10 +20,12 @@ func TestFDEForPC(t *testing.T) {
 		&FrameDescriptionEntry{begin: 100, size: 100},
 		&FrameDescriptionEntry{begin: 300, size: 10})
 
-	for _, test := range []struct {
+	type arg struct {
 		pc  uint64
 		fde *FrameDescriptionEntry
-	}{
+	}
+
+	args := []arg{
 		{0, nil},
 		{9, nil},
 		{10, frames[0]},
@@ -38,19 +40,21 @@ func TestFDEForPC(t *testing.T) {
 		{300, frames[3]},
 		{309, frames[3]},
 		{310, nil},
-		{400, nil}} {
+		{400, nil},
+	}
 
-		out, err := frames.FDEForPC(test.pc)
-		if test.fde != nil {
+	for _, arg := range args {
+		out, err := frames.FDEForPC(arg.pc)
+		if arg.fde != nil {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if out != test.fde {
-				t.Errorf("[pc = %#x] got incorrect fde\noutput:\t%#v\nexpected:\t%#v", test.pc, out, test.fde)
+			if out != arg.fde {
+				t.Errorf("[pc = %#x] got incorrect fde\noutput:\t%#v\nexpected:\t%#v", arg.pc, out, arg.fde)
 			}
 		} else {
 			if err == nil {
-				t.Errorf("[pc = %#x] expected error got fde %#v", test.pc, out)
+				t.Errorf("[pc = %#x] expected error got fde %#v", arg.pc, out)
 			}
 		}
 	}

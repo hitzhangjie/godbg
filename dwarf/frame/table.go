@@ -8,28 +8,68 @@ import (
 	"github.com/hitzhangjie/godbg/dwarf/util"
 )
 
+// This file contains code about how to build the Call Frame Information Table.
+//
+// After parsing the data of .debug_frame, the CIE and FDEs will be built.
+// And each FDE contains the instructions to build the Call Frame Information Table.
+//
+// Then, we use the state machine to execute these instructions to build the table.
+
+// executeCIEInstructions execute CIE instructions
+func executeCIEInstructions(cie *CommonInformationEntry) *FrameContext {
+	initialInstructions := make([]byte, len(cie.InitialInstructions))
+	copy(initialInstructions, cie.InitialInstructions)
+
+	frame := &FrameContext{
+		cie:           cie,
+		Regs:          make(map[uint64]DWRule),
+		RetAddrReg:    cie.ReturnAddressRegister,
+		initialRegs:   make(map[uint64]DWRule),
+		prevRegs:      make(map[uint64]DWRule),
+		codeAlignment: cie.CodeAlignmentFactor,
+		dataAlignment: cie.DataAlignmentFactor,
+		buf:           bytes.NewBuffer(initialInstructions),
+	}
+
+	// execute CIE initial instructions
+	frame.executeDwarfProgram()
+	return frame
+}
+
+// executeDwarfProgramUntilPC execute DWARF instructions to unwind the
+// stack to find the return address register.
+func executeDwarfProgramUntilPC(fde *FrameDescriptionEntry, pc uint64) *FrameContext {
+	frame := executeCIEInstructions(fde.CIE)
+	frame.order = fde.order
+	frame.loc = fde.Begin()
+	frame.address = pc
+	frame.ExecuteUntilPC(fde.Instructions)
+
+	return frame
+}
+
+// Rule rule defined for register values.
+type Rule byte
+
+const (
+	RuleUndefined Rule = iota
+	RuleSameVal
+	RuleOffset
+	RuleValOffset
+	RuleRegister
+	RuleExpression
+	RuleValExpression
+	RuleArchitectural
+	RuleCFA          // Value is rule.Reg + rule.Offset
+	RuleFramePointer // Value is stored at address rule.Reg + rule.Offset, but only if it's less than the current CFA, otherwise same value
+)
+
 // DWRule wrapper of rule defined for register values.
 type DWRule struct {
 	Rule       Rule
 	Offset     int64
 	Reg        uint64
 	Expression []byte
-}
-
-// FrameContext wrapper of FDE context
-type FrameContext struct {
-	loc           uint64
-	order         binary.ByteOrder
-	address       uint64
-	CFA           DWRule
-	Regs          map[uint64]DWRule
-	initialRegs   map[uint64]DWRule
-	prevRegs      map[uint64]DWRule
-	buf           *bytes.Buffer
-	cie           *CommonInformationEntry
-	RetAddrReg    uint64
-	codeAlignment uint64
-	dataAlignment int64
 }
 
 // Instructions used to recreate the table from the .debug_frame data.
@@ -62,22 +102,6 @@ const (
 	DW_CFA_advance_loc        = (0x1 << 6) // High 2 bits: 0x1, low 6: delta
 	DW_CFA_offset             = (0x2 << 6) // High 2 bits: 0x2, low 6: register
 	DW_CFA_restore            = (0x3 << 6) // High 2 bits: 0x3, low 6: register
-)
-
-// Rule rule defined for register values.
-type Rule byte
-
-const (
-	RuleUndefined Rule = iota
-	RuleSameVal
-	RuleOffset
-	RuleValOffset
-	RuleRegister
-	RuleExpression
-	RuleValExpression
-	RuleArchitectural
-	RuleCFA          // Value is rule.Reg + rule.Offset
-	RuleFramePointer // Value is stored at address rule.Reg + rule.Offset, but only if it's less than the current CFA, otherwise same value
 )
 
 const low_6_offset = 0x3f
@@ -115,42 +139,30 @@ var fnlookup = map[byte]instruction{
 	DW_CFA_hi_user:            hiuser,
 }
 
-func executeCIEInstructions(cie *CommonInformationEntry) *FrameContext {
-	initialInstructions := make([]byte, len(cie.InitialInstructions))
-	copy(initialInstructions, cie.InitialInstructions)
-	frame := &FrameContext{
-		cie:           cie,
-		Regs:          make(map[uint64]DWRule),
-		RetAddrReg:    cie.ReturnAddressRegister,
-		initialRegs:   make(map[uint64]DWRule),
-		prevRegs:      make(map[uint64]DWRule),
-		codeAlignment: cie.CodeAlignmentFactor,
-		dataAlignment: cie.DataAlignmentFactor,
-		buf:           bytes.NewBuffer(initialInstructions),
-	}
-
-	frame.executeDwarfProgram()
-	return frame
+// FrameContext wrapper of FDE context
+type FrameContext struct {
+	loc           uint64
+	order         binary.ByteOrder
+	address       uint64
+	CFA           DWRule
+	Regs          map[uint64]DWRule
+	initialRegs   map[uint64]DWRule
+	prevRegs      map[uint64]DWRule
+	buf           *bytes.Buffer
+	cie           *CommonInformationEntry
+	RetAddrReg    uint64
+	codeAlignment uint64
+	dataAlignment int64
 }
 
-// Unwind the stack to find the return address register.
-func executeDwarfProgramUntilPC(fde *FrameDescriptionEntry, pc uint64) *FrameContext {
-	frame := executeCIEInstructions(fde.CIE)
-	frame.order = fde.order
-	frame.loc = fde.Begin()
-	frame.address = pc
-	frame.ExecuteUntilPC(fde.Instructions)
-
-	return frame
-}
-
+// executeDwarfProgram execute DWARF program stored in frame.buf
 func (frame *FrameContext) executeDwarfProgram() {
 	for frame.buf.Len() > 0 {
 		executeDwarfInstruction(frame)
 	}
 }
 
-// ExecuteUntilPC execute dwarf instructions.
+// ExecuteUntilPC execute DWARF instructions.
 func (frame *FrameContext) ExecuteUntilPC(instructions []byte) {
 	frame.buf.Truncate(0)
 	frame.buf.Write(instructions)
@@ -163,6 +175,7 @@ func (frame *FrameContext) ExecuteUntilPC(instructions []byte) {
 	}
 }
 
+// executeDwarfInstruction execute single DWARF instruction
 func executeDwarfInstruction(frame *FrameContext) {
 	instruction, err := frame.buf.ReadByte()
 	if err != nil {
@@ -174,7 +187,6 @@ func executeDwarfInstruction(frame *FrameContext) {
 	}
 
 	fn := lookupFunc(instruction, frame.buf)
-
 	fn(frame)
 }
 
