@@ -80,13 +80,7 @@ func BenchmarkFDEForPC(b *testing.B) {
 }
 
 func TestXXX(t *testing.T) {
-	f, err := os.Open("testdata/main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	data, err := ioutil.ReadAll(f)
+	data, err := ioutil.ReadFile("testdata/main.frame")
 	if err != nil {
 		t.Fatal(err)
 	}
