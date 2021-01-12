@@ -30,7 +30,7 @@ type parseContext struct {
 func Parse(data []byte, order binary.ByteOrder, staticBase uint64, ptrSize int) FrameDescriptionEntries {
 	var (
 		buf  = bytes.NewBuffer(data)
-		pctx = &parseContext{buf: buf, entries: newFrameIndex(), staticBase: staticBase, ptrSize: ptrSize}
+		pctx = &parseContext{buf: buf, entries: newFrameDescriptionEntries(), staticBase: staticBase, ptrSize: ptrSize}
 	)
 
 	for fn := parselength; buf.Len() != 0; {

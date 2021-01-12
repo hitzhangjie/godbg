@@ -52,7 +52,7 @@ func (fde *FrameDescriptionEntry) EstablishFrame(pc uint64) *FrameContext {
 
 type FrameDescriptionEntries []*FrameDescriptionEntry
 
-func newFrameIndex() FrameDescriptionEntries {
+func newFrameDescriptionEntries() FrameDescriptionEntries {
 	return make(FrameDescriptionEntries, 0, 1000)
 }
 

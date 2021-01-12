@@ -16,7 +16,7 @@ func ptrSizeByRuntimeArch() int {
 }
 
 func TestFDEForPC(t *testing.T) {
-	frames := newFrameIndex()
+	frames := newFrameDescriptionEntries()
 	frames = append(frames,
 		&FrameDescriptionEntry{begin: 10, size: 40},
 		&FrameDescriptionEntry{begin: 50, size: 50},
@@ -109,7 +109,7 @@ func TestFDEForPC_OF_ELF(t *testing.T) {
 
 	args := []uintptr{
 		0x4b820f,
-		0x4b83b9,
+		0x4b8221,
 	}
 
 	for _, addr := range args {
