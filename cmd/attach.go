@@ -19,9 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"runtime"
 	"strconv"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
 	"github.com/hitzhangjie/godbg/target"
@@ -34,17 +32,7 @@ var attachCmd = &cobra.Command{
 	Use:   "attach <traceePID>",
 	Short: "调试运行中进程",
 	Long:  `调试运行中进程`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		//fmt.Printf("attach %s\n", strings.Join(args, ""))
-
-		// issue: https://github.com/golang/go/issues/7699
-		//
-		// 为什么syscall.PtraceDetach, detach error: no such process?
-		// 因为ptrace请求应该来自相同的tracer线程，
-		//
-		// ps: 如果恰好不是，可能需要对tracee的状态显示进行更复杂的处理，需要考虑信号？目前看系统调用传递的参数是这样
-		runtime.LockOSThread()
-
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		if len(args) != 1 {
 			return errors.New("参数错误")
 		}
@@ -63,11 +51,10 @@ var attachCmd = &cobra.Command{
 		target.DebuggedProcess.Kind = target.ATTACH
 		return nil
 	},
-	PostRunE: func(cmd *cobra.Command, args []string) error {
-		debug.NewDebugShell().Run()
-
-		// MUST: call runtime.LockOSThead() first
-		return syscall.PtraceDetach(target.DebuggedProcess.Process.Pid)
+	PostRun: func(cmd *cobra.Command, args []string) {
+		// after debugger session finished, we should kill tracee because it's started by debugger
+		debug.CurrentSession = debug.NewDebugSession().AtExit(debug.Cleanup)
+		debug.CurrentSession.Start()
 	},
 }
 

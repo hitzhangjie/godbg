@@ -177,6 +177,13 @@ func (t *TargetProcess) ExecPtrace(fn func()) {
 	t.once.Do(func() {
 		go func() {
 			// ensure all ptrace requests goes via the same tracer (thread)
+			//
+			// issue: https://github.com/golang/go/issues/7699
+			//
+			// 为什么syscall.PtraceDetach, detach error: no such process?
+			// 因为ptrace请求应该来自相同的tracer线程，
+			//
+			// ps: 如果恰好不是，可能需要对tracee的状态显示进行更复杂的处理，需要考虑信号？目前看系统调用传递的参数是这样
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
@@ -241,20 +248,21 @@ func (t *TargetProcess) Detach() error {
 	}
 
 	for _, tid := range tids {
-		err := syscall.PtraceDetach(tid)
+		t.ExecPtrace(func() {
+			err = syscall.PtraceDetach(tid)
+		})
 		if err != nil {
-			//return fmt.Errorf("thread %d detached error: %v\n", tid, err)
 			fmt.Printf("thread %d detached error: %v\n", tid, err)
 			continue
 		}
 		fmt.Printf("thread %d detached succ\n", tid)
 
-		var status syscall.WaitStatus
-		_, err = syscall.Wait4(tid, &status, 0, nil)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("thread %d detached, status: %v\n", status)
+		//var status syscall.WaitStatus
+		//_, err = syscall.Wait4(tid, &status, 0, nil)
+		//if err != nil {
+		//	return err
+		//}
+		//fmt.Printf("thread %d detached, status: %v\n", status)
 	}
 	return nil
 }

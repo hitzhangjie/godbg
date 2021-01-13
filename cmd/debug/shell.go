@@ -6,9 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/c-bata/go-prompt"
-	cobraprompt "github.com/stromland/cobra-prompt"
-
+	"github.com/peterh/liner"
 	"github.com/spf13/cobra"
 )
 
@@ -32,13 +30,23 @@ const (
 	suggestionListSourceFiles = "ListSourceFiles"
 )
 
-var debugRootCmd = &cobra.Command{
-	Use:   "help [command]",
-	Short: descShort,
+var (
+	CurrentSession *DebugSession
+)
+
+// DebugSession 调试会话
+type DebugSession struct {
+	done   chan bool
+	prefix string
+	root   *cobra.Command
+	liner  *liner.State
+	last   string
+
+	defers []func()
 }
 
-// NewDebugShell 创建一个debug专用的交互管理器
-func NewDebugShell() *cobraprompt.CobraPrompt {
+// NewDebugSession 创建一个debug专用的交互管理器
+func NewDebugSession() *DebugSession {
 
 	fn := func(cmd *cobra.Command, args []string) {
 		// 描述信息
@@ -55,26 +63,72 @@ func NewDebugShell() *cobraprompt.CobraPrompt {
 	}
 	debugRootCmd.SetHelpFunc(fn)
 
-	return &cobraprompt.CobraPrompt{
-		RootCmd:                debugRootCmd,
-		DynamicSuggestionsFunc: dynamicSuggestions,
-		ResetFlagsFlag:         false,
-		GoPromptOptions: []prompt.Option{
-			prompt.OptionTitle(descShort),
-			prompt.OptionPrefix(prefix),
-			prompt.OptionSuggestionBGColor(prompt.DarkBlue),
-			prompt.OptionDescriptionBGColor(prompt.DarkBlue),
-			prompt.OptionSelectedSuggestionBGColor(prompt.Red),
-			prompt.OptionSelectedDescriptionBGColor(prompt.Red),
-			// here, hide prompt dropdown list
-			// TODO do we have a better way to show/hide the prompt dropdown list?
-			prompt.OptionMaxSuggestion(10),
-			prompt.OptionShowCompletionAtStart(),
-			prompt.OptionCompletionOnDown(),
-		},
-		EnableSilentPrompt: true,
-		EnableShowAtStart:  true,
+	return &DebugSession{
+		done:   make(chan bool),
+		prefix: prefix,
+		root:   debugRootCmd,
+		liner:  liner.NewLiner(),
+		last:   "",
 	}
+}
+
+func (s *DebugSession) Start() {
+	s.liner.SetCompleter(completer)
+	s.liner.SetTabCompletionStyle(liner.TabPrints)
+
+	defer func() {
+		for idx := len(s.defers) - 1; idx >= 0; idx-- {
+			s.defers[idx]()
+		}
+	}()
+
+	for {
+		select {
+		case <-s.done:
+			s.liner.Close()
+			return
+		default:
+		}
+
+		txt, err := s.liner.Prompt(s.prefix)
+		if err != nil {
+			panic(err)
+		}
+
+		txt = strings.TrimSpace(txt)
+		if len(txt) != 0 {
+			s.last = txt
+		} else {
+			txt = s.last
+		}
+
+		s.root.SetArgs(strings.Split(txt, " "))
+		s.root.Execute()
+	}
+}
+
+func (s *DebugSession) AtExit(fn func()) *DebugSession {
+	s.defers = append(s.defers, fn)
+	return s
+}
+
+func (s *DebugSession) Stop() {
+	close(s.done)
+}
+
+func completer(line string) []string {
+	cmds := []string{}
+	for _, c := range debugRootCmd.Commands() {
+		if strings.HasPrefix(c.Use, line) {
+			cmds = append(cmds, strings.Split(c.Use, " ")[0])
+		}
+	}
+	return cmds
+}
+
+var debugRootCmd = &cobra.Command{
+	Use:   "help [command]",
+	Short: descShort,
 }
 
 // helpMessageByGroups 将各个命令按照分组归类，再展示帮助信息
@@ -125,20 +179,4 @@ func helpMessageByGroups(cmd *cobra.Command) string {
 		buf.WriteString("\n")
 	}
 	return buf.String()
-}
-
-func dynamicSuggestions(annotation string, _ prompt.Document) []prompt.Suggest {
-	switch annotation {
-	case suggestionListSourceFiles:
-		return GetSourceFiles()
-	default:
-		return []prompt.Suggest{}
-	}
-}
-
-func GetSourceFiles() []prompt.Suggest {
-	return []prompt.Suggest{
-		{Text: "main.go", Description: "main.go"},
-		{Text: "helloworld.go", Description: "helloworld.go"},
-	}
 }

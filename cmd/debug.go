@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
 	"github.com/hitzhangjie/godbg/target"
@@ -63,11 +62,11 @@ var debugCmd = &cobra.Command{
 		target.DebuggedProcess.Kind = target.DEBUG
 		return nil
 	},
-	PostRunE: func(cmd *cobra.Command, args []string) error {
-		debug.NewDebugShell().Run()
-		defer os.RemoveAll(BuildExecName)
+	PostRun: func(cmd *cobra.Command, args []string) {
 		// after debugger session finished, we should kill tracee because it's started by debugger
-		return syscall.Kill(target.DebuggedProcess.Process.Pid, 0)
+		debug.CurrentSession = debug.NewDebugSession().AtExit(debug.Cleanup)
+		debug.CurrentSession.Start()
+		os.RemoveAll(BuildExecName)
 	},
 }
 

@@ -15,37 +15,43 @@ var exitCmd = &cobra.Command{
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupOthers,
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// 根据被调试进程创建的方式，debug、exec or attach，来决定如何做善后处理
-		// - debug: kill traced process, delete generated binary
-		// - exec: kill traced process
-		// - attach: detach traced process
-		dbp := target.DebuggedProcess
-		err := dbp.Detach()
-		if err != nil {
-			return err
-		}
-
-		switch dbp.Kind {
-		case target.DEBUG:
-			err = os.RemoveAll(dbp.Command)
-			if err != nil {
-				return err
-			}
-			fallthrough
-		case target.EXEC:
-			err = syscall.Kill(dbp.Process.Pid, 0)
-			if err != nil {
-				return err
-			}
-		default:
-			fmt.Println("what the fuck")
-		}
-		os.Exit(0)
-		return nil
+	Run: func(cmd *cobra.Command, args []string) {
+		CurrentSession.Stop()
 	},
 }
 
 func init() {
 	debugRootCmd.AddCommand(exitCmd)
+}
+
+// Cleanup 清理调试会话
+func Cleanup() {
+	var (
+		dbp = target.DebuggedProcess
+		err error
+	)
+	// 根据被调试进程创建的方式，debug、exec or attach，来决定如何做善后处理
+	// - debug: kill traced process, delete generated binary
+	// - exec: kill traced process
+	// - attach: detach traced process
+	if err = dbp.Detach(); err != nil {
+		fmt.Fprintf(os.Stderr, "detach tracee: %d, err: %v\n", dbp.Process.Pid, err)
+		return
+	}
+
+	switch dbp.Kind {
+	case target.DEBUG:
+		if err = os.RemoveAll(dbp.Command); err != nil {
+			fmt.Fprintf(os.Stderr, "remove built binary %s, err: %v\n", dbp.Command, err)
+			return
+		}
+		fallthrough
+	case target.EXEC:
+		if err = syscall.Kill(dbp.Process.Pid, syscall.SIGKILL); err != nil {
+			fmt.Fprintf(os.Stderr, "kill tracee: %d, err: %v\n", dbp.Process.Pid, err)
+			return
+		}
+	default:
+		fmt.Println("what the fuck")
+	}
 }
