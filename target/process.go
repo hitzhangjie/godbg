@@ -32,8 +32,11 @@ type TargetProcess struct {
 	ptraceDone chan int    // ptrace请求完成
 	stopCh     chan int    // 通知需要停止调试
 }
+
+// Kind 调试发起类型
 type Kind int
 
+// 调试发起类型
 const (
 	DEBUG Kind = iota
 	EXEC
