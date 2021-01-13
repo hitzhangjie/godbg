@@ -98,6 +98,7 @@ func (s *DebugSession) Start() {
 		txt = strings.TrimSpace(txt)
 		if len(txt) != 0 {
 			s.last = txt
+			s.liner.AppendHistory(txt)
 		} else {
 			txt = s.last
 		}
