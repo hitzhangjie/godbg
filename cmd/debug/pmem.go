@@ -13,7 +13,7 @@ import (
 )
 
 var pmemCmd = &cobra.Command{
-	Use:   "pmem [flags] <address>",
+	Use:   "pmem",
 	Short: "打印内存数据",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupInfo,

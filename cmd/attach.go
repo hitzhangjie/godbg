@@ -48,7 +48,6 @@ var attachCmd = &cobra.Command{
 			return err
 		}
 		target.DebuggedProcess = dbp
-		target.DebuggedProcess.Kind = target.ATTACH
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {

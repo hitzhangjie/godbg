@@ -3,8 +3,6 @@ package line
 import (
 	"compress/zlib"
 	"debug/elf"
-	"debug/macho"
-	"debug/pe"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -39,19 +37,6 @@ func grabDebugLineSection(p string, t *testing.T) []byte {
 		data, _ := godwarf.GetDebugSection(ef, "line")
 		return data
 	}
-
-	pf, err := pe.NewFile(f)
-	if err == nil {
-		data, _ := godwarf.GetDebugSectionPE(pf, "line")
-		return data
-	}
-
-	mf, err := macho.NewFile(f)
-	if err == nil {
-		data, _ := godwarf.GetDebugSectionMacho(mf, "line")
-		return data
-	}
-
 	return nil
 }
 
@@ -127,7 +112,7 @@ func testDebugLinePrologueParser(p string, t *testing.T) {
 		}
 
 		for _, n := range dbl.FileNames {
-			if strings.Contains(n.Path, "/_fixtures/testnextprog.go") {
+			if strings.Contains(n.Path, "_fixtures/testnextprog.go") {
 				mainFileFound = true
 				break
 			}
@@ -148,12 +133,12 @@ func TestUserFile(t *testing.T) {
 
 func TestDebugLinePrologueParser(t *testing.T) {
 	// Test against known good values, from readelf --debug-dump=rawline _fixtures/testnextprog
-	p, err := filepath.Abs("../../../_fixtures/testnextprog")
+	p, err := filepath.Abs("_fixtures/testnextprog")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = exec.Command("go", "build", "-gcflags=-N -l", "-o", p, p+".go").Run()
+	err = exec.Command("go", "build", "-gcflags=all=-N -l", "-o", p, p+".go").Run()
 	if err != nil {
 		t.Fatal("Could not compile test file", p, err)
 	}
@@ -162,7 +147,7 @@ func TestDebugLinePrologueParser(t *testing.T) {
 }
 
 func BenchmarkLineParser(b *testing.B) {
-	p, err := filepath.Abs("../../../_fixtures/testnextprog")
+	p, err := filepath.Abs("_fixtures/testnextprog")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -181,7 +166,7 @@ func BenchmarkLineParser(b *testing.B) {
 }
 
 func loadBenchmarkData(tb testing.TB) DebugLines {
-	p, err := filepath.Abs("../../../_fixtures/debug_line_benchmark_data")
+	p, err := filepath.Abs("_fixtures/debug_line_benchmark_data")
 	if err != nil {
 		tb.Fatal("Could not find test data", p, err)
 	}
@@ -300,48 +285,8 @@ func BenchmarkPCToLine(b *testing.B) {
 	}
 }
 
-func TestDebugLineC(t *testing.T) {
-	p, err := filepath.Abs("../../../_fixtures/debug_line_c_data")
-	if err != nil {
-		t.Fatal("Could not find test data", p, err)
-	}
-
-	data, err := ioutil.ReadFile(p)
-	if err != nil {
-		t.Fatal("Could not read test data", err)
-	}
-
-	parsed := ParseAll(data, nil, 0, true, ptrSizeByRuntimeArch())
-
-	if len(parsed) == 0 {
-		t.Fatal("Parser result is empty")
-	}
-
-	file := []string{"main.c", "/mnt/c/develop/delve/_fixtures/main.c", "/usr/lib/gcc/x86_64-linux-gnu/7/include/stddef.h",
-		"/usr/include/x86_64-linux-gnu/bits/types.h", "/usr/include/x86_64-linux-gnu/bits/libio.h", "/usr/include/stdio.h",
-		"/usr/include/x86_64-linux-gnu/bits/sys_errlist.h"}
-
-	for _, ln := range parsed {
-		if len(ln.FileNames) == 0 {
-			t.Fatal("Parser could not parse Filenames")
-		}
-		for _, fn := range ln.FileNames {
-			found := false
-			for _, cmp := range file {
-				if filepath.ToSlash(fn.Path) == cmp {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Fatalf("Found %s does not appear in the filelist\n", fn.Path)
-			}
-		}
-	}
-}
-
 func TestDebugLineDwarf4(t *testing.T) {
-	p, err := filepath.Abs("../../../_fixtures/zdebug_line_dwarf4")
+	p, err := filepath.Abs("_fixtures/zdebug_line_dwarf4")
 	if err != nil {
 		t.Fatal("Could not find test data", p, err)
 	}

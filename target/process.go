@@ -1,6 +1,7 @@
 package target
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -93,34 +95,40 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		Args:        nil,
 		Threads:     map[int]*Thread{},
 		Breakpoints: map[uintptr]*Breakpoint{},
+		Kind:        ATTACH,
+
+		once:       &sync.Once{},
+		ptraceCh:   make(chan func()),
+		ptraceDone: make(chan int),
+		stopCh:     make(chan int),
+	}
+
+	if target.Process, err = os.FindProcess(pid); err != nil {
+		return nil, err
 	}
 
 	target.ExecPtrace(func() {
-		// Attach to running process (thread)
-		if err = target.Attach(pid); err != nil {
-			return
-		}
-
-		if target.Process, err = os.FindProcess(pid); err != nil {
-			return
-		}
-
-		// initialize the command and arguments,
-		// after then, we could support restart command.
-		if target.Command, err = readProcComm(pid); err != nil {
-			return
-		}
-
-		if target.Args, err = readProcCommArgs(pid); err != nil {
-			return
-		}
-
-		// Attach to other threads, and prepare to trace newly created thread
-		if err = target.updateThreadList(); err != nil {
-			return
-		}
+		// attach to running process (thread)
+		err = target.attach(pid)
 	})
+	if err != nil {
+		return nil, err
+	}
 
+	// initialize the command and arguments,
+	// after then, we could support restart command.
+	if target.Command, err = readProcComm(pid); err != nil {
+		return nil, err
+	}
+
+	if target.Args, err = readProcCommArgs(pid); err != nil {
+		return nil, err
+	}
+
+	target.ExecPtrace(func() {
+		// attach to other threads, and prepare to trace newly created thread
+		err = target.updateThreadList()
+	})
 	if err != nil {
 		target.StopPtrace()
 		return nil, err
@@ -161,13 +169,11 @@ func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Proc
 	if err != nil {
 		return nil, err
 	}
+	t.Process = progCmd.Process
 
 	// wait target process stopped
-	var (
-		status syscall.WaitStatus
-		rusage syscall.Rusage
-	)
-	_, err = syscall.Wait4(progCmd.Process.Pid, &status, syscall.WALL, &rusage)
+	_, status, err := t.wait(progCmd.Process.Pid, 0)
+	//_, err = syscall.Wait4(progCmd.Process.Pid, &status, syscall.WALL, &rusage)
 	if err != nil {
 		return nil, err
 	}
@@ -209,15 +215,15 @@ func (t *TargetProcess) StopPtrace() {
 	close(t.stopCh)
 }
 
-// Attach Attach to process pid
-func (t *TargetProcess) Attach(pid int) error {
+// attach attach to process pid
+func (t *TargetProcess) attach(pid int) error {
 
 	// check traceePID
 	if !checkPid(pid) {
 		return fmt.Errorf("process %d not existed\n", pid)
 	}
 
-	// Attach
+	// attach
 	err := syscall.PtraceAttach(pid)
 	if err != nil {
 		return fmt.Errorf("process %d attached error: %v\n", pid, err)
@@ -225,11 +231,7 @@ func (t *TargetProcess) Attach(pid int) error {
 	fmt.Printf("process %d attached succ\n", pid)
 
 	// wait
-	var (
-		status syscall.WaitStatus
-		rusage syscall.Rusage
-	)
-	_, err = syscall.Wait4(pid, &status, syscall.WSTOPPED, &rusage)
+	_, status, err := t.wait(pid, syscall.WALL)
 	if err != nil {
 		return fmt.Errorf("process %d waited error: %v\n", pid, err)
 	}
@@ -289,38 +291,37 @@ func (t *TargetProcess) updateThreadList() error {
 
 	tids, err := t.loadThreadList()
 	if err != nil {
-		return err
+		return fmt.Errorf("load threads err: %v", err)
 	}
 
 	for _, tid := range tids {
-		// Attach to thread
+		// attach to thread
 		err = syscall.PtraceAttach(tid)
 		if err != nil && err != unix.EPERM {
 			// Maybe we have traced tid via PTRACE_O_TRACECLONE.
-			// If we try to Attach to it again, it will fail.
+			// If we try to attach to it again, it will fail.
 			// We should ignore this kind of error.
-			return err
+			return fmt.Errorf("attach err: %v", err)
 		}
 
 		// wait thread
-		var status unix.WaitStatus
-		wpid, err := unix.Wait4(tid, &status, unix.WALL, nil)
+		_, status, err := t.wait(tid, syscall.WALL|syscall.WNOHANG)
 		if err != nil {
-			return err
+			return fmt.Errorf("wait err: %v", err)
 		}
 		if status.Exited() {
-			fmt.Printf("thread already exited: %d\n", wpid)
+			fmt.Printf("thread:%d already exited\n", tid)
 		}
 
 		// update thread
 		err = syscall.PtraceSetOptions(tid, syscall.PTRACE_O_TRACECLONE)
 		if err != nil {
-			return err
+			return fmt.Errorf("set PTRACE_O_TRACECLONE err: %v", err)
 		}
 
 		t.Threads[tid] = &Thread{
 			Tid:     tid,
-			Status:  status,
+			Status:  *status,
 			Process: t,
 		}
 	}
@@ -427,9 +428,58 @@ func (t *TargetProcess) ClearAll() error {
 // Continue 执行到下一个断点处
 func (t *TargetProcess) Continue() error {
 	var err error
-	t.ExecPtrace(func() {
-		err = syscall.PtraceCont(t.Process.Pid, 0)
-	})
+	for _, thread := range t.Threads {
+		t.ExecPtrace(func() {
+			// continue
+			err = syscall.PtraceCont(thread.Tid, 0)
+			if err != nil {
+				fmt.Printf("thread: %d ptrace cont, err: %v\n", thread.Tid, err)
+			}
+		})
+
+		// wait, if there's no children threads, return immediately
+		wpid, status, err := t.wait(thread.Tid, 0)
+		if err != nil {
+			return fmt.Errorf("thread: %d wait, err: %v", thread.Tid, err)
+		}
+
+		if wpid == 0 {
+			continue
+		}
+
+		// new cloned thread
+		if !(status.StopSignal() == syscall.SIGTRAP && status.TrapCause() == syscall.PTRACE_EVENT_CLONE) {
+			continue
+		}
+
+		// A traced thread has cloned a new thread, grab the pid and
+		// add it to our list of traced threads.
+		var cloned uint
+		t.ExecPtrace(func() {
+			cloned, err = syscall.PtraceGetEventMsg(wpid)
+		})
+		if err != nil {
+			if err == syscall.ESRCH {
+				// thread died while we were adding it
+				continue
+			}
+			return fmt.Errorf("could not get event message: %s", err)
+		}
+
+		t.ExecPtrace(func() {
+			err = syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE)
+		})
+		if err != nil {
+			return err
+		}
+
+		t.Threads[int(cloned)] = &Thread{
+			Tid:     int(cloned),
+			Status:  *status,
+			Process: t,
+		}
+	}
+
 	return err
 }
 
@@ -511,3 +561,74 @@ func (t *TargetProcess) Backtrace() ([]byte, error) {
 func (t *TargetProcess) Frame(idx int) error {
 	return nil
 }
+
+func (t *TargetProcess) wait(pid, options int) (int, *syscall.WaitStatus, error) {
+	var s syscall.WaitStatus
+	if (t.Process.Pid != pid) || (options != 0) {
+		wpid, err := syscall.Wait4(pid, &s, syscall.WALL|options, nil)
+		return wpid, &s, err
+	}
+	// If we call wait4/waitpid on a thread that is the leader of its group,
+	// with options == 0, while ptracing and the thread leader has exited leaving
+	// zombies of its own then waitpid hangs forever this is apparently intended
+	// behaviour in the linux kernel because it's just so convenient.
+	// Therefore we call wait4 in a loop with WNOHANG, sleeping a while between
+	// calls and exiting when either wait4 succeeds or we find out that the thread
+	// has become a zombie.
+	// References:
+	// https://sourceware.org/bugzilla/show_bug.cgi?id=12702
+	// https://sourceware.org/bugzilla/show_bug.cgi?id=10095
+	// https://sourceware.org/bugzilla/attachment.cgi?id=5685
+	for {
+		wpid, err := syscall.Wait4(pid, &s, syscall.WNOHANG|syscall.WALL|options, nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		if wpid != 0 {
+			return wpid, &s, err
+		}
+		if status(pid, t.Command) == statusZombie {
+			return pid, nil, nil
+		}
+		fmt.Println("wait...")
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func status(pid int, comm string) rune {
+	f, err := os.Open(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return '\000'
+	}
+	defer f.Close()
+	rd := bufio.NewReader(f)
+
+	var (
+		p     int
+		state rune
+	)
+
+	// The second field of /proc/pid/stat is the name of the task in parenthesis.
+	// The name of the task is the base name of the executable for this process limited to TASK_COMM_LEN characters
+	// Since both parenthesis and spaces can appear inside the name of the task and no escaping happens we need to read the name of the executable first
+	// See: include/linux/sched.c:315 and include/linux/sched.c:1510
+	_, _ = fmt.Fscanf(rd, "%d ("+comm+")  %c", &p, &state)
+	return state
+}
+
+// Process statuses
+const (
+	statusSleeping  = 'S'
+	statusRunning   = 'R'
+	statusTraceStop = 't'
+	statusZombie    = 'Z'
+
+	// Kernel 2.6 has TraceStop as T
+	// TODO(derekparker) Since this means something different based on the
+	// version of the kernel ('T' is job control stop on modern 3.x+ kernels) we
+	// may want to differentiate at some point.
+	statusTraceStopT = 'T'
+
+	personalityGetPersonality = 0xffffffff // argument to pass to personality syscall to get the current personality
+	_ADDR_NO_RANDOMIZE        = 0x0040000  // ADDR_NO_RANDOMIZE linux constant
+)

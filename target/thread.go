@@ -1,9 +1,11 @@
 package target
 
-import "golang.org/x/sys/unix"
+import (
+	"syscall"
+)
 
 type Thread struct {
 	Tid     int
-	Status  unix.WaitStatus
+	Status  syscall.WaitStatus
 	Process *TargetProcess
 }

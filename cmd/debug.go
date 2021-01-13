@@ -42,7 +42,7 @@ var debugCmd = &cobra.Command{
 			cmdName = args
 		}
 
-		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-o", BuildExecName}
+		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-ldflags=-compressdwarf=false", "-o", BuildExecName}
 		cmdArgs = append(cmdArgs, cmdName...)
 		buildCmd := exec.Command("go", cmdArgs...)
 
