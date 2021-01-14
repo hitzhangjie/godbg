@@ -60,7 +60,6 @@ var disassCmd = &cobra.Command{
 		if err != nil || n == 0 {
 			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
-		//fmt.Printf("size of text: %d\n", n)
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 8, ' ', 0)
 
@@ -73,7 +72,6 @@ var disassCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("x86asm decode error: %v", err)
 			}
-			//fmt.Printf("%#x %s\n", regs.PC()+uint64(offset), inst.String())
 
 			asm, err := instSyntax(inst, syntax)
 			if err != nil {

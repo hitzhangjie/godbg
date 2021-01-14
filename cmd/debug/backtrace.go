@@ -33,27 +33,23 @@ var backtraceCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println("open elf file ok")
 
 		// read elf sections
 		pcln, err := file.Section(".gopclntab").Data()
 		if err != nil {
 			return err
 		}
-		fmt.Println("read .gopclntab ok")
 
 		sym, err := file.Section(".gosymtab").Data()
 		if err != nil {
 			return err
 		}
-		fmt.Println("read .gosymtab ok")
 
 		lntab := gosym.NewLineTable(pcln, regs.PC())
 		tab, err := gosym.NewTable(sym, lntab)
 		if err != nil {
 			return err
 		}
-		fmt.Println("build line table ok")
 
 		// print stack trace
 		bp := regs.Rbp
@@ -62,7 +58,7 @@ var backtraceCmd = &cobra.Command{
 		ret := uint64(0)
 
 		f, n, fn := tab.PCToLine(pc - 1)
-		fmt.Printf("#%d call:%s pos:%s:%d\n", idx, fn.Name, f, n)
+		fmt.Printf("#%d %s %s:%d\n", idx, fn.Name, f, n)
 
 		for {
 			idx++
@@ -84,19 +80,17 @@ var backtraceCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			//fmt.Printf("read previous bp address %#x\n", bp)
 
 			// ret address
 			err = binary.Read(reader, binary.LittleEndian, &ret)
 			if err != nil {
 				return err
 			}
-			//fmt.Printf("read previous ret address %#x\n", ret)
 
 			// TODO：暂时不考虑内联、尾递归优化（go编译器暂时不支持尾递归优化）的话，ret基本上对应着调用方函数的栈帧，
 			// 但是为了让源代码位置更精准，这里的减去对ret减1
 			f, n, fn := tab.PCToLine(ret - 1)
-			fmt.Printf("#%d call:%s pos:%s:%d\n", idx, fn.Name, f, n)
+			fmt.Printf("#%d %s %s:%d\n", idx, fn.Name, f, n)
 		}
 		return nil
 	},
