@@ -52,11 +52,45 @@ type TargetProcess struct {
 
 // NewTargetProcess 创建一个待调试进程
 func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
-	var (
-		target TargetProcess
-		err    error
-	)
-	target = TargetProcess{
+	target := newTargetProcess(cmd, args...)
+
+	var err error
+	defer func() {
+		if err != nil {
+			target.StopPtrace()
+		}
+	}()
+
+	target.ExecPtrace(func() {
+		// start and trace
+		target.Process, err = target.launch(cmd, args...)
+		if err != nil {
+			err = fmt.Errorf("launch command err: %v", err)
+			return
+		}
+
+		// trace newly created thread
+		err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
+		if err != nil {
+			err = fmt.Errorf("thread: %d set ptrace clone", target.Process.Pid)
+			return
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// load line table
+	err = target.loadLineTable()
+	if err != nil {
+		return nil, fmt.Errorf("load linetable err: %v", err)
+	}
+	return target, nil
+}
+
+func newTargetProcess(cmd string, args ...string) *TargetProcess {
+	target := TargetProcess{
 		Process:     nil,
 		Command:     cmd,
 		Args:        args,
@@ -68,55 +102,16 @@ func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
 		ptraceDone: make(chan int),
 		stopCh:     make(chan int),
 	}
-	defer func() {
-		if err != nil {
-			target.StopPtrace()
-		}
-	}()
-
-	target.ExecPtrace(func() {
-		// start and trace
-		target.Process, err = target.launchCommand(cmd, args...)
-		if err != nil {
-			return
-		}
-
-		// trace newly created thread
-		err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// load line table
-	err = target.loadLineTable()
-	if err != nil {
-		return nil, err
-	}
-
-	return &target, nil
+	return &target
 }
 
 // AttachTargetProcess trace一个目标进程（准确地说是线程）
 func AttachTargetProcess(pid int) (*TargetProcess, error) {
-	var (
-		target TargetProcess
-		err    error
-	)
-	target = TargetProcess{
-		Process:     nil,
-		Command:     "",
-		Args:        nil,
-		Threads:     map[int]*Thread{},
-		Breakpoints: map[uintptr]*Breakpoint{},
-		Kind:        ATTACH,
 
-		once:       &sync.Once{},
-		ptraceCh:   make(chan func()),
-		ptraceDone: make(chan int),
-		stopCh:     make(chan int),
-	}
+	target := newTargetProcess("")
+	target.Kind = ATTACH
+
+	var err error
 	defer func() {
 		if err != nil {
 			target.StopPtrace()
@@ -127,8 +122,8 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		return nil, err
 	}
 
+	// attach to running process (thread)
 	target.ExecPtrace(func() {
-		// attach to running process (thread)
 		err = target.attach(pid)
 	})
 	if err != nil {
@@ -159,10 +154,10 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		return nil, err
 	}
 
-	return &target, nil
+	return target, nil
 }
 
-// launchCommand execute `execName` with `args`
+// launch execute `execName` with `args`
 //
 // 为了方便调试，除了跟踪主线程，还需要考虑跟踪后续新创建的线程，linux 2.5.46中引入了以下ptrace选项，
 // 通过设置该选项可以使得tracer自动跟踪新创建线程。
@@ -175,7 +170,7 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 //                     waitpid(2) by the tracer will return a status value.
 //
 // see more info by `man 2 ptrace`.
-func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Process, error) {
+func (t *TargetProcess) launch(execName string, args ...string) (*os.Process, error) {
 
 	progCmd := exec.Command(execName, args...)
 	progCmd.Stdin = os.Stdin
@@ -286,7 +281,7 @@ func (t *TargetProcess) attach(pid int) error {
 	fmt.Printf("process %d attached succ\n", pid)
 
 	// wait
-	_, status, err := t.wait(pid, syscall.WALL)
+	_, status, err := t.wait(pid, 0)
 	if err != nil {
 		return fmt.Errorf("process %d waited error: %v\n", pid, err)
 	}
@@ -479,6 +474,20 @@ func (t *TargetProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
 	return brk, nil
 }
 
+func (t *TargetProcess) IsBreakpoint(addr uintptr) (bool, error) {
+	if _, ok := t.Breakpoints[addr]; ok {
+		return true, nil
+	}
+
+	buf := make([]byte, 1)
+	n, err := t.ReadMemory(addr, buf)
+	if err != nil || n != 1 {
+		return false, fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+	}
+
+	return buf[0] == 0xcc, nil
+}
+
 // ClearAll 删除所有已添加的断点
 func (t *TargetProcess) ClearAll() error {
 	return nil
@@ -487,15 +496,20 @@ func (t *TargetProcess) ClearAll() error {
 func (t *TargetProcess) Continue() error {
 	var err error
 	t.ExecPtrace(func() {
-		err = syscall.PtraceCont(t.Process.Pid, 0)
+		err = syscall.PtraceCont(t.Process.Pid, int(syscall.SIGCONT))
 	})
 	if err != nil {
 		return err
 	}
 
-	wpid, status, err := t.wait(t.Process.Pid, syscall.WALL)
-	fmt.Printf("thread %d status: %v\n", wpid, desc(status))
-	return err
+	for {
+		wpid, status, err := t.wait(t.Process.Pid, 0)
+		if err != nil {
+			return fmt.Errorf("wait err: %v", err)
+		}
+		fmt.Printf("thread %d status: %v\n", wpid, desc(status))
+		return nil
+	}
 }
 
 func desc(status *syscall.WaitStatus) string {
@@ -519,21 +533,19 @@ func desc(status *syscall.WaitStatus) string {
 func (t *TargetProcess) ContinueX() error {
 
 	var err error
+
 	for _, thread := range t.Threads {
-		t.ExecPtrace(func() {
-			// continue
-			err = syscall.PtraceCont(thread.Tid, 0)
-			if err != nil {
-				fmt.Printf("thread: %d ptrace cont, err: %v\n", thread.Tid, err)
-			}
-		})
+
+		t.ExecPtrace(func() { err = syscall.PtraceCont(thread.Tid, int(syscall.SIGCONT)) })
+		if err != nil {
+			fmt.Printf("thread: %d ptrace cont, err: %v\n", thread.Tid, err)
+		}
 
 		// wait, if there's no children threads, return immediately
-		wpid, status, err := t.wait(thread.Tid, 0)
+		wpid, status, err := t.wait(thread.Tid, syscall.WNOHANG)
 		if err != nil {
 			return fmt.Errorf("thread: %d wait, err: %v", thread.Tid, err)
 		}
-
 		if wpid == 0 {
 			continue
 		}
@@ -546,9 +558,7 @@ func (t *TargetProcess) ContinueX() error {
 		// A traced thread has cloned a new thread, grab the pid and
 		// add it to our list of traced threads.
 		var cloned uint
-		t.ExecPtrace(func() {
-			cloned, err = syscall.PtraceGetEventMsg(wpid)
-		})
+		t.ExecPtrace(func() { cloned, err = syscall.PtraceGetEventMsg(wpid) })
 		if err != nil {
 			if err == syscall.ESRCH {
 				// thread died while we were adding it
@@ -557,9 +567,7 @@ func (t *TargetProcess) ContinueX() error {
 			return fmt.Errorf("could not get event message: %s", err)
 		}
 
-		t.ExecPtrace(func() {
-			err = syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE)
-		})
+		t.ExecPtrace(func() { err = syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE) })
 		if err != nil {
 			return err
 		}
@@ -571,7 +579,7 @@ func (t *TargetProcess) ContinueX() error {
 		}
 	}
 
-	return err
+	return nil
 }
 
 // SingleStep 执行一条指令
@@ -717,6 +725,7 @@ func (t *TargetProcess) Frame(idx int) error {
 
 func (t *TargetProcess) wait(pid, options int) (int, *syscall.WaitStatus, error) {
 	var s syscall.WaitStatus
+
 	if (t.Process.Pid != pid) || (options != 0) {
 		wpid, err := syscall.Wait4(pid, &s, syscall.WALL|options, nil)
 		return wpid, &s, err

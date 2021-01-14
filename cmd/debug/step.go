@@ -37,14 +37,13 @@ var stepCmd = &cobra.Command{
 			return fmt.Errorf("get regs error: %v", err)
 		}
 
-		buf := make([]byte, 1)
-		n, err := dbp.ReadMemory(uintptr(regs.PC()-1), buf)
-		if err != nil || n != 1 {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+		ok, err := dbp.IsBreakpoint(uintptr(regs.PC() - 1))
+		if err != nil {
+			return fmt.Errorf("test breakpoint err: %v", err)
 		}
 
 		// isn't a breakpoint
-		if buf[0] != 0xcc {
+		if !ok {
 			if _, err = dbp.SingleStep(); err != nil {
 				return fmt.Errorf("single step err: %v", err)
 			}

@@ -24,7 +24,7 @@ var continueCmd = &cobra.Command{
 			// display current pc
 			regs, err := target.DebuggedProcess.ReadRegister()
 			if err != nil {
-				fmt.Printf("get regs error: %v", err)
+				fmt.Printf("get regs error: %v\n", err)
 			}
 			fmt.Printf("continue ok, current PC: %#x\n", regs.PC())
 		}()
@@ -35,15 +35,14 @@ var continueCmd = &cobra.Command{
 			return fmt.Errorf("get regs error: %v", err)
 		}
 
-		buf := make([]byte, 1)
-		n, err := dbp.ReadMemory(uintptr(regs.PC()-1), buf)
-		if err != nil || n != 1 {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+		ok, err := dbp.IsBreakpoint(uintptr(regs.PC() - 1))
+		if err != nil {
+			return fmt.Errorf("test breakpoint err: %v", err)
 		}
 
 		// not a breakpoint
-		if buf[0] != 0xcc {
-			return dbp.Continue()
+		if !ok {
+			return dbp.ContinueX()
 		}
 
 		// read a breakpoint
@@ -51,7 +50,7 @@ var continueCmd = &cobra.Command{
 		if err == target.ErrBreakpointNotExisted {
 			// this 0xcc is not patched by debugger, and this 0xcc has been executed already,
 			// so just continue
-			return dbp.Continue()
+			return dbp.ContinueX()
 		}
 		if err != nil {
 			// inner error occur
@@ -65,7 +64,11 @@ var continueCmd = &cobra.Command{
 			return err
 		}
 
-		if err = dbp.Continue(); err != nil {
+		if _, err = dbp.SingleStep(); err != nil {
+			return fmt.Errorf("singlestep err: %v", err)
+		}
+
+		if err = dbp.ContinueX(); err != nil {
 			return fmt.Errorf("continue error: %v", err)
 		}
 		fmt.Println("continue ok")
