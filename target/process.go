@@ -2,6 +2,8 @@ package target
 
 import (
 	"bufio"
+	"debug/elf"
+	"debug/gosym"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +16,15 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+)
+
+// Kind 调试发起类型
+type Kind int
+
+const (
+	DEBUG Kind = iota
+	EXEC
+	ATTACH
 )
 
 var (
@@ -33,17 +44,9 @@ type TargetProcess struct {
 	ptraceCh   chan func() // ptrace请求统一发送到这里，由专门协程处理
 	ptraceDone chan int    // ptrace请求完成
 	stopCh     chan int    // 通知需要停止调试
+
+	Table *gosym.Table // 用来在pc和file lineno、func之间做转换
 }
-
-// Kind 调试发起类型
-type Kind int
-
-// 调试发起类型
-const (
-	DEBUG Kind = iota
-	EXEC
-	ATTACH
-)
 
 // NewTargetProcess 创建一个待调试进程
 func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
@@ -63,6 +66,11 @@ func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
 		ptraceDone: make(chan int),
 		stopCh:     make(chan int),
 	}
+	defer func() {
+		if err != nil {
+			target.StopPtrace()
+		}
+	}()
 
 	target.ExecPtrace(func() {
 		// start and trace
@@ -76,7 +84,12 @@ func NewTargetProcess(cmd string, args ...string) (*TargetProcess, error) {
 	})
 
 	if err != nil {
-		target.StopPtrace()
+		return nil, err
+	}
+
+	// load line table
+	err = target.loadLineTable()
+	if err != nil {
 		return nil, err
 	}
 
@@ -102,6 +115,11 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		ptraceDone: make(chan int),
 		stopCh:     make(chan int),
 	}
+	defer func() {
+		if err != nil {
+			target.StopPtrace()
+		}
+	}()
 
 	if target.Process, err = os.FindProcess(pid); err != nil {
 		return nil, err
@@ -130,7 +148,12 @@ func AttachTargetProcess(pid int) (*TargetProcess, error) {
 		err = target.updateThreadList()
 	})
 	if err != nil {
-		target.StopPtrace()
+		return nil, err
+	}
+
+	// load line table
+	err = target.loadLineTable()
+	if err != nil {
 		return nil, err
 	}
 
@@ -180,6 +203,37 @@ func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Proc
 	fmt.Printf("process %d stopped: %v\n", progCmd.Process.Pid, status.Stopped())
 
 	return progCmd.Process, nil
+}
+
+func (t *TargetProcess) loadLineTable() error {
+
+	// open elf file
+	file, err := elf.Open(fmt.Sprintf("/proc/%d/exe", t.Process.Pid))
+	if err != nil {
+		return err
+	}
+	fmt.Println("open elf file ok")
+
+	// read elf sections
+	v := file.Section(".gopclntab")
+	pcln, err := v.Data()
+	if err != nil {
+		return err
+	}
+
+	sym, err := file.Section(".gosymtab").Data()
+	if err != nil {
+		return err
+	}
+
+	lntab := gosym.NewLineTable(pcln, v.Addr)
+	tab, err := gosym.NewTable(sym, lntab)
+	if err != nil {
+		return err
+	}
+
+	t.Table = tab
+	return nil
 }
 
 func (t *TargetProcess) ExecPtrace(fn func()) {
