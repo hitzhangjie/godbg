@@ -34,14 +34,12 @@ var continueCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}
-		fmt.Printf("pc value: %#x\n", regs.PC())
 
 		buf := make([]byte, 1)
 		n, err := dbp.ReadMemory(uintptr(regs.PC()-1), buf)
 		if err != nil || n != 1 {
 			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
-		fmt.Printf("pc-1 data: %#x\n", buf[0])
 
 		// not a breakpoint
 		if buf[0] != 0xcc {
@@ -49,8 +47,6 @@ var continueCmd = &cobra.Command{
 		}
 
 		// read a breakpoint
-		fmt.Printf("ready to clear %#x\n", regs.PC()-1)
-
 		brk, err := dbp.ClearBreakpoint(uintptr(regs.PC() - 1))
 		if err != nil {
 			// inner error occur

@@ -13,8 +13,10 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
+	"golang.org/x/arch/x86/x86asm"
 	"golang.org/x/sys/unix"
 )
 
@@ -186,6 +188,7 @@ func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Proc
 		Foreground: false,
 	}
 	progCmd.Env = os.Environ()
+	progCmd.Env = append(progCmd.Env, "GODEBUG=asyncpreemptoff=1")
 
 	// start the process
 	err := progCmd.Start()
@@ -491,9 +494,25 @@ func (t *TargetProcess) Continue() error {
 	}
 
 	wpid, status, err := t.wait(t.Process.Pid, syscall.WALL)
-	_ = wpid
-	_ = status
+	fmt.Printf("thread %d status: %v\n", wpid, desc(status))
 	return err
+}
+
+func desc(status *syscall.WaitStatus) string {
+	switch {
+	case status.Continued():
+		return "continued"
+	case status.Exited():
+		return "exited: " + strconv.Itoa(status.ExitStatus())
+	case status.Signaled():
+		return "signaled: " + status.Signal().String()
+	case status.Stopped():
+		return "stopped: " + status.StopSignal().String()
+	case status.CoreDump():
+		return "coredump"
+	default:
+		return strconv.Itoa(int(*status))
+	}
 }
 
 // ContinueX 执行到下一个断点处，考虑所有线程的问题
@@ -582,8 +601,56 @@ func (t *TargetProcess) SingleStep() (*syscall.WaitStatus, error) {
 // --------------------------------------------------------------------
 
 // Disassemble 反汇编地址addr处的指令
-func (t *TargetProcess) Disassemble(addr uintptr) ([]byte, error) {
-	return nil, nil
+func (t *TargetProcess) Disassemble(addr, max uint64, syntax string) error {
+
+	// 指令数据
+	dat := make([]byte, 1024)
+	n, err := t.ReadMemory(uintptr(addr), dat)
+	if err != nil || n == 0 {
+		return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+	}
+	fmt.Println("read bytes:", n)
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 8, ' ', 0)
+
+	// 反汇编这里的指令数据
+	offset := uint64(0)
+	count := uint64(0)
+
+	for count < max {
+		inst, err := x86asm.Decode(dat[offset:], 64)
+		if err != nil {
+			return fmt.Errorf("x86asm decode error: %v", err)
+		}
+
+		asm, err := instSyntax(inst, syntax)
+		if err != nil {
+			return fmt.Errorf("x86asm syntax error: %v", err)
+		}
+
+		end := offset + uint64(inst.Len)
+		fmt.Fprintf(tw, "%#x:\t% x\t%s\n", addr+offset, dat[offset:end], asm)
+		offset = end
+		count++
+	}
+	tw.Flush()
+
+	return nil
+}
+
+func instSyntax(inst x86asm.Inst, syntax string) (string, error) {
+	asm := ""
+	switch syntax {
+	case "go":
+		asm = x86asm.GoSyntax(inst, uint64(inst.PCRel), nil)
+	case "gnu":
+		asm = x86asm.GNUSyntax(inst, uint64(inst.PCRel), nil)
+	case "intel":
+		asm = x86asm.IntelSyntax(inst, uint64(inst.PCRel), nil)
+	default:
+		return "", fmt.Errorf("invalid asm syntax error")
+	}
+	return asm, nil
 }
 
 // --------------------------------------------------------------------
