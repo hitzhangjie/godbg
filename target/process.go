@@ -195,8 +195,7 @@ func (t *TargetProcess) launchCommand(execName string, args ...string) (*os.Proc
 	t.Process = progCmd.Process
 
 	// wait target process stopped
-	_, status, err := t.wait(progCmd.Process.Pid, 0)
-	//_, err = syscall.Wait4(progCmd.Process.Pid, &status, syscall.WALL, &rusage)
+	_, status, err := t.wait(progCmd.Process.Pid, syscall.WALL)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +211,6 @@ func (t *TargetProcess) loadLineTable() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("open elf file ok")
 
 	// read elf sections
 	v := file.Section(".gopclntab")
@@ -449,12 +447,16 @@ func (t *TargetProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
 	return breakpoint, nil
 }
 
+var (
+	ErrBreakpointNotExisted = errors.New("breakpoint not existed")
+)
+
 // ClearBreakpoint 删除addr处的断点
 func (t *TargetProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
 
 	brk, ok := t.Breakpoints[addr]
 	if !ok {
-		return nil, errors.New("断点不存在")
+		return nil, ErrBreakpointNotExisted
 	}
 
 	// 移除断点
@@ -465,7 +467,7 @@ func (t *TargetProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
 		var n int
 		n, err = syscall.PtracePokeData(pid, brk.Addr, []byte{brk.Orig})
 		if err != nil || n != 1 {
-			err = fmt.Errorf("移除断点失败: %v", err)
+			err = fmt.Errorf("ptrace poke data err: %v", err)
 			return
 		}
 		delete(t.Breakpoints, brk.Addr)
@@ -479,8 +481,24 @@ func (t *TargetProcess) ClearAll() error {
 	return nil
 }
 
-// Continue 执行到下一个断点处
 func (t *TargetProcess) Continue() error {
+	var err error
+	t.ExecPtrace(func() {
+		err = syscall.PtraceCont(t.Process.Pid, 0)
+	})
+	if err != nil {
+		return err
+	}
+
+	wpid, status, err := t.wait(t.Process.Pid, syscall.WALL)
+	_ = wpid
+	_ = status
+	return err
+}
+
+// ContinueX 执行到下一个断点处，考虑所有线程的问题
+func (t *TargetProcess) ContinueX() error {
+
 	var err error
 	for _, thread := range t.Threads {
 		t.ExecPtrace(func() {
@@ -492,7 +510,7 @@ func (t *TargetProcess) Continue() error {
 		})
 
 		// wait, if there's no children threads, return immediately
-		wpid, status, err := t.wait(thread.Tid, syscall.WNOHANG)
+		wpid, status, err := t.wait(thread.Tid, 0)
 		if err != nil {
 			return fmt.Errorf("thread: %d wait, err: %v", thread.Tid, err)
 		}
@@ -538,12 +556,27 @@ func (t *TargetProcess) Continue() error {
 }
 
 // SingleStep 执行一条指令
-func (t *TargetProcess) SingleStep() error {
+func (t *TargetProcess) SingleStep() (*syscall.WaitStatus, error) {
 	var err error
 	t.ExecPtrace(func() {
 		err = syscall.PtraceSingleStep(t.Process.Pid)
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	// MUST: 当发起了某些对tracee执行控制的ptrace request之后，要调用syscall.Wait等待并获取tracee状态变化
+	var (
+		wstatus syscall.WaitStatus
+		rusage  syscall.Rusage
+		pid     = t.Process.Pid
+	)
+	_, err = syscall.Wait4(pid, &wstatus, syscall.WALL, &rusage)
+	if err != nil {
+		return nil, fmt.Errorf("wait error: %v", err)
+	}
+
+	return &wstatus, nil
 }
 
 // --------------------------------------------------------------------
@@ -644,7 +677,6 @@ func (t *TargetProcess) wait(pid, options int) (int, *syscall.WaitStatus, error)
 		if status(pid, t.Command) == statusZombie {
 			return pid, nil, nil
 		}
-		fmt.Println("wait...")
 		time.Sleep(200 * time.Millisecond)
 	}
 }

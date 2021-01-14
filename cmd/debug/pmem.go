@@ -13,16 +13,19 @@ import (
 )
 
 var pmemCmd = &cobra.Command{
-	Use:   "pmem",
+	Use:   "pmem <addr>",
 	Short: "打印内存数据",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupInfo,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 || len(args[0]) == 0 {
+			return errors.New("invalid <addr>")
+		}
+		addr := args[0]
 		count, _ := cmd.Flags().GetUint("count")
 		format, _ := cmd.Flags().GetString("fmt")
 		size, _ := cmd.Flags().GetUint("size")
-		addr, _ := cmd.Flags().GetString("addr")
 
 		// check params
 		err := checkPmemArgs(count, format, size, addr)
@@ -42,7 +45,23 @@ var pmemCmd = &cobra.Command{
 		buf = buf[:n]
 
 		fmt.Printf("read %d bytes ok:\n", n)
-		s := prettyPrintMem(uintptr(readAt), buf, isLittleEndian(), format[0], int(size))
+
+		// pretty print the memory
+		var ft byte
+		switch format {
+		case "b", "binary":
+			ft = 'b'
+		case "o", "octal":
+			ft = 'o'
+		case "d", "decimal":
+			ft = 'd'
+		case "x", "hex":
+			ft = 'x'
+		default:
+			return fmt.Errorf("invalid format")
+		}
+
+		s := prettyPrintMem(uintptr(readAt), buf, isLittleEndian(), ft, int(size))
 		fmt.Println(s)
 
 		return nil
@@ -56,7 +75,6 @@ func init() {
 	pmemCmd.Flags().Uint("count", 16, "查看数值数量")
 	pmemCmd.Flags().String("fmt", "hex", "数值打印格式: b(binary), o(octal), x(hex), d(decimal)") // TODO signed/unsigned
 	pmemCmd.Flags().Uint("size", 4, "数值占用字节")
-	pmemCmd.Flags().String("addr", "", "读取的内存地址")
 }
 
 func checkPmemArgs(count uint, format string, size uint, addr string) error {
@@ -67,11 +85,14 @@ func checkPmemArgs(count uint, format string, size uint, addr string) error {
 		return errors.New("invalid size")
 	}
 	formats := map[string]struct{}{
-		"b":  {},
-		"o":  {},
-		"x":  {},
-		"d":  {},
-		"ud": {},
+		"b":       {},
+		"binary":  {},
+		"o":       {},
+		"octal":   {},
+		"x":       {},
+		"hex":     {},
+		"d":       {},
+		"decimal": {},
 	}
 	if _, ok := formats[format]; !ok {
 		return errors.New("invalid format")

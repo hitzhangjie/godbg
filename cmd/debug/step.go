@@ -2,7 +2,6 @@ package debug
 
 import (
 	"fmt"
-	"syscall"
 
 	"github.com/hitzhangjie/godbg/target"
 	"github.com/spf13/cobra"
@@ -15,9 +14,22 @@ var stepCmd = &cobra.Command{
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupCtrlFlow,
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		//fmt.Println("step")
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+
 		dbp := target.DebuggedProcess
+
+		defer func() {
+			if err != nil {
+				return
+			}
+			// display current pc
+			regs, err := dbp.ReadRegister()
+			if err != nil {
+				fmt.Printf("get regs error: %v", err)
+				return
+			}
+			fmt.Printf("single step ok, current PC: %#x\n", regs.PC())
+		}()
 
 		// 读取PC值
 		regs, err := dbp.ReadRegister()
@@ -26,49 +38,43 @@ var stepCmd = &cobra.Command{
 		}
 
 		buf := make([]byte, 1)
-		n, err := dbp.ReadMemory(uintptr(regs.PC()), buf)
+		n, err := dbp.ReadMemory(uintptr(regs.PC()-1), buf)
 		if err != nil || n != 1 {
 			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
 
-		// read a breakpoint
-		if buf[0] == 0xCC {
-			brk, err := dbp.ClearBreakpoint(uintptr(regs.PC()))
-			if err != nil {
-				return fmt.Errorf("清除断点失败, err: %v", err)
+		// isn't a breakpoint
+		if buf[0] != 0xcc {
+			if _, err = dbp.SingleStep(); err != nil {
+				return fmt.Errorf("single step err: %v", err)
 			}
-			defer dbp.AddBreakpoint(brk.Addr)
-
-			// rewind 1 byte
-			regs.SetPC(regs.PC() - 1)
-			err = dbp.WriteRegister(regs)
-			if err != nil {
-				return err
-			}
+			return nil
 		}
 
-		err = dbp.SingleStep()
+		// is a breakpoint
+		brk, err := dbp.ClearBreakpoint(uintptr(regs.PC() - 1))
 		if err != nil {
+			// debugger inner error
+			if err != target.ErrBreakpointNotExisted {
+				return fmt.Errorf("clear breakpoint err: %v", err)
+			}
+			// this 0xcc isn't patched by debugger, and this 0xcc is already executed,
+			// just single step
+			_, err = dbp.SingleStep()
+			return err
+		}
+		defer dbp.AddBreakpoint(brk.Addr)
+
+		// rewind pc by 1
+		regs.SetPC(regs.PC() - 1)
+		if err = dbp.WriteRegister(regs); err != nil {
+			return err
+		}
+
+		// single step
+		if _, err = dbp.SingleStep(); err != nil {
 			return fmt.Errorf("single step error: %v", err)
 		}
-
-		// MUST: 当发起了某些对tracee执行控制的ptrace request之后，要调用syscall.Wait等待并获取tracee状态变化
-		var (
-			wstatus syscall.WaitStatus
-			rusage  syscall.Rusage
-			pid     = dbp.Process.Pid
-		)
-		_, err = syscall.Wait4(pid, &wstatus, syscall.WALL, &rusage)
-		if err != nil {
-			return fmt.Errorf("wait error: %v", err)
-		}
-
-		// display current pc
-		regs, err = dbp.ReadRegister()
-		if err != nil {
-			return fmt.Errorf("get regs error: %v", err)
-		}
-		fmt.Printf("single step ok, current PC: %#x\n", regs.PC())
 		return nil
 	},
 }
