@@ -3,6 +3,7 @@ package debug
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 
 	"github.com/hitzhangjie/godbg/target"
@@ -28,14 +29,40 @@ var breakCmd = &cobra.Command{
 			return errors.New("参数错误")
 		}
 
-		locStr := args[0]
-		v, err := strconv.ParseUint(locStr, 0, 64)
-		if err != nil {
-			return fmt.Errorf("invalid locspec: %v", err)
-		}
-		addr := uintptr(v)
+		var (
+			addr uint64
+			err  error
+		)
 
-		_, err = target.DebuggedProcess.AddBreakpoint(addr)
+		// try parse as address
+		locStr := args[0]
+		{
+			addr, err = parseAddress(locStr)
+			if err == nil {
+				goto BREAK
+			}
+		}
+
+		// try parse as file:lineno
+		{
+			file, lineno, err := parseFileLineno(locStr)
+			if err != nil {
+				return fmt.Errorf("invalid loc: %s", locStr)
+			}
+			file, err = filepath.Abs(file)
+			if err != nil {
+				return err
+			}
+			pc, _, err := target.DebuggedProcess.Table.LineToPC(file, lineno)
+			if err != nil {
+				return fmt.Errorf("invalid loc: %s, err: %v", locStr, err)
+			}
+			addr = pc
+		}
+
+	BREAK:
+		// target add breakpoint
+		_, err = target.DebuggedProcess.AddBreakpoint(uintptr(addr))
 		if err != nil {
 			return err
 		}
@@ -46,4 +73,12 @@ var breakCmd = &cobra.Command{
 
 func init() {
 	debugRootCmd.AddCommand(breakCmd)
+}
+
+func parseAddress(locStr string) (uint64, error) {
+	v, err := strconv.ParseUint(locStr, 0, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid locspec: %v", err)
+	}
+	return v, nil
 }

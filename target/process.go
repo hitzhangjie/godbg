@@ -492,7 +492,7 @@ func (t *TargetProcess) Continue() error {
 		})
 
 		// wait, if there's no children threads, return immediately
-		wpid, status, err := t.wait(thread.Tid, 0)
+		wpid, status, err := t.wait(thread.Tid, syscall.WNOHANG)
 		if err != nil {
 			return fmt.Errorf("thread: %d wait, err: %v", thread.Tid, err)
 		}

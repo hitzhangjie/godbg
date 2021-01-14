@@ -32,7 +32,7 @@ var listCmd = &cobra.Command{
 		// parse location
 		if len(args) != 0 {
 
-			file, lineno, err = parseLocation(args[0])
+			file, lineno, err = parseFileLineno(args[0])
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ const (
 )
 
 // must be form file:lineno, like main.go:100
-func parseLocation(s string) (file string, lineno int, err error) {
+func parseFileLineno(s string) (file string, lineno int, err error) {
 	vals := strings.Split(s, ":")
 	if len(vals) != 2 {
 		err = fmt.Errorf("invalid location: %s, must be file:lineno", s)
