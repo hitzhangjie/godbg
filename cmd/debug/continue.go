@@ -48,14 +48,14 @@ var continueCmd = &cobra.Command{
 
 		// read a breakpoint
 		brk, err := dbp.ClearBreakpoint(uintptr(regs.PC() - 1))
-		if err != nil {
-			// inner error occur
-			if err != target.ErrBreakpointNotExisted {
-				return fmt.Errorf("clear breakpoint err: %v", err)
-			}
+		if err == target.ErrBreakpointNotExisted {
 			// this 0xcc is not patched by debugger, and this 0xcc has been executed already,
 			// so just continue
 			return dbp.Continue()
+		}
+		if err != nil {
+			// inner error occur
+			return fmt.Errorf("clear breakpoint err: %v", err)
 		}
 		defer dbp.AddBreakpoint(brk.Addr)
 

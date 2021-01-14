@@ -609,7 +609,6 @@ func (t *TargetProcess) Disassemble(addr, max uint64, syntax string) error {
 	if err != nil || n == 0 {
 		return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 	}
-	fmt.Println("read bytes:", n)
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 8, ' ', 0)
 

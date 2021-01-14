@@ -53,15 +53,15 @@ var stepCmd = &cobra.Command{
 
 		// is a breakpoint
 		brk, err := dbp.ClearBreakpoint(uintptr(regs.PC() - 1))
-		if err != nil {
-			// debugger inner error
-			if err != target.ErrBreakpointNotExisted {
-				return fmt.Errorf("clear breakpoint err: %v", err)
-			}
+		if err == target.ErrBreakpointNotExisted {
 			// this 0xcc isn't patched by debugger, and this 0xcc is already executed,
 			// just single step
 			_, err = dbp.SingleStep()
 			return err
+		}
+		if err != nil {
+			// debugger inner error
+			return fmt.Errorf("clear breakpoint err: %v", err)
 		}
 		defer dbp.AddBreakpoint(brk.Addr)
 
