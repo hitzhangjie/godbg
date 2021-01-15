@@ -48,7 +48,7 @@ type DebugLineInfo struct {
 	endSeqIsValid      bool
 }
 
-// FileEntry file entry in File Name Table.
+// FileEntry file entry in File name Table.
 type FileEntry struct {
 	Path        string
 	DirIdx      uint64

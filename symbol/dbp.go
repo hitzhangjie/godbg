@@ -1,6 +1,8 @@
 package symbol
 
-import "github.com/hitzhangjie/godbg/target"
+import (
+	"github.com/hitzhangjie/godbg/target"
+)
 
 // DebuggedProcess debugged process
 type DebuggedProcess struct {
@@ -8,6 +10,7 @@ type DebuggedProcess struct {
 	bi     *BinaryInfo           // 符号层操作
 }
 
+// NewDebuggerProcess debug cmd, returns the debugged process
 func NewDebuggerProcess(cmd string, args ...string) (*DebuggedProcess, error) {
 
 	// start `cmd` as tracee
@@ -21,6 +24,7 @@ func NewDebuggerProcess(cmd string, args ...string) (*DebuggedProcess, error) {
 	if err != nil {
 		return nil, err
 	}
+	bi.dump()
 
 	dbp := DebuggedProcess{
 		target: target,

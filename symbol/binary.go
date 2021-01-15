@@ -24,7 +24,7 @@ type BinaryInfo struct {
 	CompileUnits []*CompileUnit
 	FdeEntries   frame.FrameDescriptionEntries
 
-	// used for parsing purpose
+	// only used for parsing purpose
 	curEntry            *dwarf.Entry
 	curCompileUnitEntry *dwarf.Entry
 	curSubprogramEntry  *dwarf.Entry
@@ -56,44 +56,29 @@ func Analyze(fname string) (*BinaryInfo, error) {
 		Sources: make(map[string]map[int][]*dwarf.LineEntry),
 	}
 
-	// parseFunction
+	// parse dwarf
 	dwarfData, err := file.DWARF()
 	if err != nil {
 		return nil, err
 	}
 
-	if err = bi.ParseLineAndInfoSection(dwarfData); err != nil {
-		return nil, err
-	}
-	if err = bi.ParseFrameSection(file); err != nil {
+	// parse .(z)debug_line and .(z)debug_info
+	if err = bi.ParseLineAndInfo(dwarfData); err != nil {
 		return nil, err
 	}
 
-	// debug source log
-	for file, mp := range bi.Sources {
-		for line, lineEntryArray := range mp {
-			for _, lineEntry := range lineEntryArray {
-				fmt.Printf("bi.sources file: %s, line: %s, addr: %#x\n", file, line, lineEntry.Address)
-			}
-		}
-	}
-
-	// debug frame log
-	for i, v := range bi.FdeEntries {
-		if v.CIE != nil {
-			fmt.Printf("bi.frames index: %d, cie: %vs\n", i, v.CIE)
-			continue
-		}
-		fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
+	// parse .(z)debug_frame
+	if err = bi.ParseFrame(file); err != nil {
+		return nil, err
 	}
 
 	return bi, nil
 }
 
-// ParseLineAndInfoSection parseFunction .(z)debug_line and .(z)debug_info sections
+// ParseLineAndInfo parseFrom .(z)debug_line and .(z)debug_info sections
 //
 // unit entries: see DWARF v4 chapter 3.3.1 normal and partial compilation unit entries
-func (bi *BinaryInfo) ParseLineAndInfoSection(dwarfData *dwarf.Data) error {
+func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 
 	reader := reader.New(dwarfData)
 	for {
@@ -122,8 +107,8 @@ func (bi *BinaryInfo) ParseLineAndInfoSection(dwarfData *dwarf.Data) error {
 				return err
 			}
 
-			if bi.Sources[cu.Name()] == nil {
-				bi.Sources[cu.Name()] = lineMappings
+			if bi.Sources[cu.name()] == nil {
+				bi.Sources[cu.name()] = lineMappings
 			} else {
 				panic("single file is split into multiple compilation units????")
 			}
@@ -137,7 +122,7 @@ func (bi *BinaryInfo) ParseLineAndInfoSection(dwarfData *dwarf.Data) error {
 			bi.curCompileUnit.functions = append(bi.curCompileUnit.functions, fn)
 			bi.curSubprogramEntry = entry
 
-			err = fn.parseFunction(entry)
+			err = fn.parseFrom(entry)
 			if err != nil {
 				return err
 			}
@@ -158,17 +143,10 @@ func (bi *BinaryInfo) ParseLineAndInfoSection(dwarfData *dwarf.Data) error {
 	return nil
 }
 
-// not considered inline function
-func (bi *BinaryInfo) findFunctionIncludePc(pc uint64) (*Function, error) {
-	for _, f := range bi.Functions {
-		if f.lowpc <= pc && pc < f.highpc {
-			return f, nil
-		}
-	}
-	return nil, errors.New("not found")
-}
-
-func (bi *BinaryInfo) ParseFrameSection(elffile *elf.File) error {
+// ParseFrame parse .(z)debug_frame section to build the Call Frame Information
+//
+// see DWARFv4 6.4 Call Frame Information.
+func (bi *BinaryInfo) ParseFrame(elffile *elf.File) error {
 	frameData, err := godwarf.GetDebugSection(elffile, "frame")
 	if err != nil {
 		return err
@@ -185,10 +163,24 @@ func (bi *BinaryInfo) ParseFrameSection(elffile *elf.File) error {
 	return nil
 }
 
-func (bi *BinaryInfo) findFrameInformation(pc uint64) (*frame.FrameDescriptionEntry, error) {
+// PCToFunction returns the function whose range covers PC
+//
+// note: not considered inline function
+func (bi *BinaryInfo) PCToFunction(pc uint64) (*Function, error) {
+	for _, f := range bi.Functions {
+		if f.lowpc <= pc && pc < f.highpc {
+			return f, nil
+		}
+	}
+	return nil, errors.New("not found")
+}
+
+// PCToFDE returns the frame whose range covers PC
+func (bi *BinaryInfo) PCToFDE(pc uint64) (*frame.FrameDescriptionEntry, error) {
 	return bi.FdeEntries.FDEForPC(pc)
 }
 
+// parseLoc parse location `loc` to file:lineno
 func parseLoc(loc string) (string, int, error) {
 	sps := strings.Split(loc, ":")
 	if len(sps) != 2 {
@@ -202,15 +194,17 @@ func parseLoc(loc string) (string, int, error) {
 	return filename, lineno, nil
 }
 
-func (bi *BinaryInfo) locToPc(loc string) (uint64, error) {
+// locToPC convert location `loc` to PC
+func (bi *BinaryInfo) locToPC(loc string) (uint64, error) {
 	filename, lineno, err := parseLoc(loc)
 	if err != nil {
 		return 0, err
 	}
-	return bi.fileLineToPc(filename, lineno)
+	return bi.fileLineToPC(filename, lineno)
 }
 
-func (bi *BinaryInfo) fileLineToPc(filename string, lineno int) (uint64, error) {
+// fileLineToPC convert location `filename:lineno` to PC
+func (bi *BinaryInfo) fileLineToPC(filename string, lineno int) (uint64, error) {
 	if bi.Sources[filename] == nil ||
 		bi.Sources[filename][lineno] == nil ||
 		len(bi.Sources[filename][lineno]) == 0 {
@@ -219,20 +213,23 @@ func (bi *BinaryInfo) fileLineToPc(filename string, lineno int) (uint64, error) 
 	return bi.Sources[filename][lineno][0].Address, nil
 }
 
-func (bi *BinaryInfo) fileLineToPcForBreakPoint(filename string, lineno int) (uint64, error) {
+// fileLineToPCForBreakpoint convert location `filename:lineno` to PC, used for breakpoint address
+func (bi *BinaryInfo) fileLineToPCForBreakpoint(filename string, lineno int) (uint64, error) {
 	if bi.Sources[filename] == nil ||
 		bi.Sources[filename][lineno] == nil ||
 		len(bi.Sources[filename][lineno]) == 0 {
 		return 0, errors.New("not found")
 	}
-	lineEntryArray := bi.Sources[filename][lineno]
-	for _, v := range lineEntryArray {
+	lineEntries := bi.Sources[filename][lineno]
+	// skip prologue
+	for _, v := range lineEntries {
 		if v.PrologueEnd {
 			return v.Address, nil
 		}
 	}
+	// TODO why?
 	addr := uint64(0)
-	for i, v := range lineEntryArray {
+	for i, v := range lineEntries {
 		if i == 0 {
 			addr = v.Address
 		} else {
@@ -245,10 +242,6 @@ func (bi *BinaryInfo) fileLineToPcForBreakPoint(filename string, lineno int) (ui
 		return 0, errors.New("not found")
 	}
 	return addr, nil
-}
-
-func (bi *BinaryInfo) getCurFileLineByPc(pc uint64) (string, int, error) {
-	return bi.pcTofileLine(pc)
 }
 
 func (bi *BinaryInfo) pcTofileLine(pc uint64) (string, int, error) {
@@ -291,6 +284,7 @@ func (bi *BinaryInfo) pcTofileLine(pc uint64) (string, int, error) {
 	return rangeMin.filename, rangeMin.lineno, nil
 }
 
+// Deprecated: use bi.Target.ReadMemory or bi.Target.Disassemble instead
 func (bi *BinaryInfo) getSingleMemInst(pid int, pc uint64) (x86asm.Inst, error) {
 	var (
 		mem  []byte
@@ -306,4 +300,24 @@ func (bi *BinaryInfo) getSingleMemInst(pid int, pc uint64) (x86asm.Inst, error) 
 		return x86asm.Inst{}, err
 	}
 	return inst, nil
+}
+
+func (bi *BinaryInfo) dump() {
+	// debug source log
+	for file, mp := range bi.Sources {
+		for line, lineEntryArray := range mp {
+			for _, lineEntry := range lineEntryArray {
+				fmt.Printf("bi.sources file: %s, line: %s, addr: %#x\n", file, line, lineEntry.Address)
+			}
+		}
+	}
+
+	// debug frame log
+	for i, v := range bi.FdeEntries {
+		if v.CIE != nil {
+			fmt.Printf("bi.frames index: %d, cie: %vs\n", i, v.CIE)
+			continue
+		}
+		fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
+	}
 }

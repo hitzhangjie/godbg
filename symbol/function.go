@@ -16,11 +16,12 @@ type Function struct {
 	declFile  int64
 	external  bool
 
+	entry     *dwarf.Entry
 	variables []*dwarf.Entry
 	cu        *CompileUnit
 }
 
-func (f *Function) parseFunction(curEntry *dwarf.Entry) error {
+func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 
 	fields := curEntry.Field
 	fmt.Println("|================= START ===========================|")
@@ -61,5 +62,6 @@ func (f *Function) parseFunction(curEntry *dwarf.Entry) error {
 	}
 	fmt.Println("|================== END ============================|")
 
+	f.entry = curEntry
 	return nil
 }

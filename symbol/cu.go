@@ -30,7 +30,7 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]
 			return nil, err
 		}
 
-		fmt.Printf("compile unit: %s, line entry: %v\n", c.Name(), lnEntry)
+		fmt.Printf("compile unit: %s, line entry: %v\n", c.name(), lnEntry)
 
 		if lnEntry.File == nil {
 			continue
@@ -43,6 +43,6 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]
 	return lineMappings, nil
 }
 
-func (c *CompileUnit) Name() string {
+func (c *CompileUnit) name() string {
 	return c.entry.Val(dwarf.AttrName).(string)
 }
