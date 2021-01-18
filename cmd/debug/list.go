@@ -1,8 +1,6 @@
 package debug
 
 import (
-	"debug/gosym"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"strconv"
@@ -25,8 +23,8 @@ var listCmd = &cobra.Command{
 		var (
 			file   string
 			lineno int
-			fn     *gosym.Func
-			err    error
+			//fn     *gosym.Func
+			err error
 		)
 
 		// parse location
@@ -50,10 +48,17 @@ var listCmd = &cobra.Command{
 				pc--
 			}
 
-			file, lineno, fn = target.DBPProcess.Table.PCToLine(pc)
-			if fn == nil {
-				return errors.New("invalid locspec")
+			//file, lineno, fn = target.DBPProcess.Table.PCToLine(pc)
+			//if fn == nil {
+			//	return errors.New("invalid locspec")
+			//}
+			//fmt.Printf("gopclntab get file:lineno = %s:%d\n", file, lineno)
+
+			file, lineno, err = target.DBPProcess.BInfo.PCToFileLine(pc)
+			if err != nil {
+				return fmt.Errorf("fileline to pc err: %v", err)
 			}
+			fmt.Printf("line table get file:lineno = %s:%d\n", file, lineno)
 		}
 
 		// print lines
@@ -111,26 +116,6 @@ func parseFileLineno(s string) (file string, lineno int, err error) {
 		return
 	}
 	lineno = int(v)
-	return
-}
-
-func parseLocationByPC() (file string, lineno int, err error) {
-	regs, err := target.DBPProcess.ReadRegister()
-	if err != nil {
-		return
-	}
-
-	pc := regs.PC()
-	_, ok := target.DBPProcess.Breakpoints[uintptr(pc)]
-	if ok {
-		pc--
-	}
-
-	file, lineno, fn := target.DBPProcess.Table.PCToLine(pc)
-	if fn == nil {
-		err = errors.New("invalid locspec")
-		return
-	}
 	return
 }
 

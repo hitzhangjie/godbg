@@ -2,8 +2,6 @@ package target
 
 import (
 	"bufio"
-	"debug/elf"
-	"debug/gosym"
 	"errors"
 	"fmt"
 	"os"
@@ -32,14 +30,17 @@ type DebuggedProcess struct {
 	Args    []string // 进程启动参数，方便重启调试
 	Kind    Kind     // 发起调试的类型
 
-	BInfo       *symbol.BinaryInfo      // 符号层操作
-	Table       *gosym.Table            // 用来在pc和file lineno、func之间做转换
+	BInfo *symbol.BinaryInfo // 符号层操作
+
 	Breakpoints map[uintptr]*Breakpoint // 已经添加的断点
 
 	once       *sync.Once
 	ptraceCh   chan func() // ptrace请求统一发送到这里，由专门协程处理
 	ptraceDone chan int    // ptrace请求完成
 	stopCh     chan int    // 通知需要停止调试
+
+	//Deprecated 使用BinaryInfo代替（使用.(z)debug_line代替.gopclntab+.gosymtab
+	//Table       *gosym.Table            // 用来在pc和file lineno、func之间做转换
 }
 
 // NewDebuggedProcess 创建一个待调试进程
@@ -119,10 +120,10 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 	}
 
 	// load line table
-	err = target.loadLineTable()
-	if err != nil {
-		return nil, err
-	}
+	//err = target.loadLineTable()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	// load binary ifo
 	bi, err := symbol.Analyze(cmd)
@@ -171,6 +172,13 @@ func AttachTargetProcess(pid int) (*DebuggedProcess, error) {
 		return nil, err
 	}
 
+	exec := fmt.Sprintf("/proc/%d/exe", pid)
+	bi, err := symbol.Analyze(exec)
+	if err != nil {
+		return nil, err
+	}
+	target.BInfo = bi
+
 	// initialize the command and arguments,
 	// after then, we could support restart command.
 	if target.Command, err = readProcComm(pid); err != nil {
@@ -190,10 +198,10 @@ func AttachTargetProcess(pid int) (*DebuggedProcess, error) {
 	}
 
 	// load line table
-	err = target.loadLineTable()
-	if err != nil {
-		return nil, err
-	}
+	//err = target.loadLineTable()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	return &target, nil
 }
@@ -244,35 +252,35 @@ func (t *DebuggedProcess) launchCommand(execName string, args ...string) (*os.Pr
 	return progCmd.Process, nil
 }
 
-func (t *DebuggedProcess) loadLineTable() error {
-
-	// open elf file
-	file, err := elf.Open(fmt.Sprintf("/proc/%d/exe", t.Process.Pid))
-	if err != nil {
-		return err
-	}
-
-	// read elf sections
-	v := file.Section(".gopclntab")
-	pcln, err := v.Data()
-	if err != nil {
-		return err
-	}
-
-	sym, err := file.Section(".gosymtab").Data()
-	if err != nil {
-		return err
-	}
-
-	lntab := gosym.NewLineTable(pcln, v.Addr)
-	tab, err := gosym.NewTable(sym, lntab)
-	if err != nil {
-		return err
-	}
-
-	t.Table = tab
-	return nil
-}
+//func (t *DebuggedProcess) loadLineTable() error {
+//
+//	// open elf file
+//	file, err := elf.Open(fmt.Sprintf("/proc/%d/exe", t.Process.Pid))
+//	if err != nil {
+//		return err
+//	}
+//
+//	// read elf sections
+//	v := file.Section(".gopclntab")
+//	pcln, err := v.Data()
+//	if err != nil {
+//		return err
+//	}
+//
+//	sym, err := file.Section(".gosymtab").Data()
+//	if err != nil {
+//		return err
+//	}
+//
+//	lntab := gosym.NewLineTable(pcln, v.Addr)
+//	tab, err := gosym.NewTable(sym, lntab)
+//	if err != nil {
+//		return err
+//	}
+//
+//	t.Table = tab
+//	return nil
+//}
 
 func (t *DebuggedProcess) ExecPtrace(fn func()) {
 	t.once.Do(func() {
