@@ -102,25 +102,25 @@ func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 				return err
 			}
 
-			lineMappings, err := cu.parseLineSection(rd)
+			filename, lineMappings, err := cu.parseLineSection(rd)
 			if err != nil {
 				return err
 			}
 
-			orig, ok := bi.Sources[cu.name()]
+			orig, ok := bi.Sources[filename]
 			if !ok || orig == nil {
-				bi.Sources[cu.name()] = lineMappings
+				bi.Sources[filename] = lineMappings
 				continue
 			}
-			//panic("single file is split into multiple compilation units????")
+
 			for ln, entries := range lineMappings {
-				if v, ok := orig[ln]; !ok {
+				v, ok := orig[ln]
+				if !ok {
 					orig[ln] = entries
 					continue
-				} else {
-					v = append(v, entries...)
-					orig[ln] = v
 				}
+				v = append(v, entries...)
+				orig[ln] = v
 			}
 		}
 
@@ -198,17 +198,17 @@ func parseLoc(loc string) (string, int, error) {
 	return filename, lineno, nil
 }
 
-// locToPC convert location `loc` to PC
-func (bi *BinaryInfo) locToPC(loc string) (uint64, error) {
+// LocToPC convert location `loc` to PC
+func (bi *BinaryInfo) LocToPC(loc string) (uint64, error) {
 	filename, lineno, err := parseLoc(loc)
 	if err != nil {
 		return 0, err
 	}
-	return bi.fileLineToPC(filename, lineno)
+	return bi.FileLineToPC(filename, lineno)
 }
 
-// fileLineToPC convert location `filename:lineno` to PC
-func (bi *BinaryInfo) fileLineToPC(filename string, lineno int) (uint64, error) {
+// FileLineToPC convert location `filename:lineno` to PC
+func (bi *BinaryInfo) FileLineToPC(filename string, lineno int) (uint64, error) {
 	if bi.Sources[filename] == nil ||
 		bi.Sources[filename][lineno] == nil ||
 		len(bi.Sources[filename][lineno]) == 0 {
@@ -217,8 +217,8 @@ func (bi *BinaryInfo) fileLineToPC(filename string, lineno int) (uint64, error) 
 	return bi.Sources[filename][lineno][0].Address, nil
 }
 
-// fileLineToPCForBreakpoint convert location `filename:lineno` to PC, used for breakpoint address
-func (bi *BinaryInfo) fileLineToPCForBreakpoint(filename string, lineno int) (uint64, error) {
+// FileLineToPCForBreakpoint convert location `filename:lineno` to PC, used for breakpoint address
+func (bi *BinaryInfo) FileLineToPCForBreakpoint(filename string, lineno int) (uint64, error) {
 	if bi.Sources[filename] == nil ||
 		bi.Sources[filename][lineno] == nil ||
 		len(bi.Sources[filename][lineno]) == 0 {
@@ -248,7 +248,7 @@ func (bi *BinaryInfo) fileLineToPCForBreakpoint(filename string, lineno int) (ui
 	return addr, nil
 }
 
-func (bi *BinaryInfo) pcTofileLine(pc uint64) (string, int, error) {
+func (bi *BinaryInfo) PCToFileLine(pc uint64) (string, int, error) {
 	if bi.Sources == nil {
 		return "", 0, errors.New("no sources file")
 	}
@@ -317,41 +317,42 @@ func (bi *BinaryInfo) Dump() {
 		}
 	}
 
-	// debug compile unit
-	for _, cu := range bi.CompileUnits {
-		fmt.Printf("compile unit: %s\n", cu.name())
-	}
-
-	// debug frame log
-	for i, v := range bi.FdeEntries {
-		if v.CIE != nil {
-			fmt.Printf("bi.frames index: %d, cie: %v\n", i, v.CIE)
-			continue
-		}
-		fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
-	}
-
-	// dump functions
-	for _, fn := range bi.Functions {
-		for _, field := range fn.entry.Field {
-			fmt.Println("|================= START ===========================|")
-			fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
-				field.Attr.String(),
-				fmt.Sprintf("%v", field.Val),
-				fmt.Sprintf("%s", field.Class))
-			fmt.Println("|================== END ============================|")
-		}
-	}
-
-	// debug variables
-	for _, fn := range bi.Functions {
-		for _, entry := range fn.variables {
-			fields := entry.Field
-			fmt.Println("|================= START ===========================|")
-			for _, field := range fields {
-				fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n", entry.Tag.GoString(), field.Attr.String(), field.Class)
-			}
-			fmt.Println("|================== END ============================|")
-		}
-	}
+	//// debug compile unit
+	//for _, cu := range bi.CompileUnits {
+	//	fmt.Printf("compile unit: %s\n", cu.name())
+	//}
+	//
+	//// debug frame log
+	//for i, v := range bi.FdeEntries {
+	//	if v.CIE != nil {
+	//		fmt.Printf("bi.frames index: %d, cie: %v\n", i, v.CIE)
+	//		continue
+	//	}
+	//	fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
+	//}
+	//
+	//// dump functions
+	//for _, fn := range bi.Functions {
+	//	for _, field := range fn.entry.Field {
+	//		fmt.Println("|================= START ===========================|")
+	//		fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
+	//			field.Attr.String(),
+	//			fmt.Sprintf("%v", field.Val),
+	//			fmt.Sprintf("%s", field.Class))
+	//		fmt.Println("|================== END ============================|")
+	//	}
+	//}
+	//
+	//// debug variables
+	//for _, fn := range bi.Functions {
+	//	for _, entry := range fn.variables {
+	//		fields := entry.Field
+	//		fmt.Println("|================= START ===========================|")
+	//		for _, field := range fields {
+	//			fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n",
+	//				entry.Tag.GoString(), field.Attr.String(), field.Val, field.Class)
+	//		}
+	//		fmt.Println("|================== END ============================|")
+	//	}
+	//}
 }

@@ -53,11 +53,19 @@ var breakCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+
 			pc, _, err := target.DBPProcess.Table.LineToPC(file, lineno)
 			if err != nil {
 				return fmt.Errorf("invalid loc: %s, err: %v", locStr, err)
 			}
 			addr = pc
+			fmt.Printf("gopclntab get addr: %#x\n", pc)
+
+			pc, err = target.DBPProcess.BInfo.FileLineToPC(file, lineno)
+			if err != nil {
+				return fmt.Errorf("fileline to pc err: %v", err)
+			}
+			fmt.Printf("gopclntab get addr: %#x\n", pc)
 		}
 
 	BREAK:

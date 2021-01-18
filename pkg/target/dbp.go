@@ -74,7 +74,44 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 		}
 
 		// trace newly created thread
-		err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
+		// TODO 这里正常是需要打开的！
+		// 以testdata/loop2.go为例，func init中启动的goroutine可能和main函数所在的main goroutine由不同线程执行，
+		// 此时，虽然main函数中虽然可以正常添加断点、并continue到此位置。但是func init中协程却不断输出信息，干扰调试。
+		//
+		// 有没有办法，控制住该func init中协程的执行呢？有，就是要能够提前trace新创建的线程，对tracee添加下面的选项
+		// PTRACE_O_TRACECLONE，就可以让新clone出的线程自动被trace！
+		//
+		//```
+		//package main
+		//func init() {
+		//	go func() {
+		//		for {
+		//			fmt.Println("main.func1 pid:", os.Getpid())
+		//			time.Sleep(time.Second)
+		//		}
+		//	}()
+		//}
+		//func main() {
+		//	pid := os.Getpid()
+		//	for {
+		//		fmt.Println("main.main pid:", pid)
+		//		time.Sleep(time.Second * 3)
+		//	}
+		//}
+		//```
+		//
+		// 添加了此选项之后，就可以正常trace新clone出来的线程，此时所有线程处于trace状态，tracer一样会收到通知（当然需要wait）
+		// 假定现在创建了线程t用来执行func init()中goroutine，我们在main.main中添加了断点，此时还没有执行到断点，
+		// 当我们希望执行到断点位置时，执行PTRACE_CONT操作：
+		// - 此时线程继续执行，但是执行的是不是main goroutine就不一定了，main.main一定是在main goroutine中执行的，
+		//   所以该线程中途有可能会莫名其妙地停下来，但是不是我们希望的位置，但是只要它能正常执行，过段时间总会在合适的位置停下来；
+		// - 为了更清晰地支持上述切换，delve提供了threads/thread来查看、切换线程，goroutines/goroutine来查看、切换goroutine；
+		//
+		// 但是要注意，如果添加了这个选项之后，所有thread被trace，然后我们执行continue操作，实际上最终你不能确定main.main由哪一个
+		// thread来执行，因此在当前线程上重复执行continue也不一定能达到预想的效果，需要怎么做呢？对所有线程执行PTRACE_CONT操作：
+		// - 对于新clone的线程，要有办法感知到它的存在；
+		//
+		//err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
 	})
 
 	if err != nil {
@@ -201,7 +238,8 @@ func (t *DebuggedProcess) launchCommand(execName string, args ...string) (*os.Pr
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("process %d stopped: %v\n", progCmd.Process.Pid, status.Stopped())
+	fmt.Printf("process %d stopped: %v, reason: %s\n",
+		progCmd.Process.Pid, status.Stopped(), status.StopSignal().String())
 
 	return progCmd.Process, nil
 }

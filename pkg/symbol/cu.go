@@ -14,8 +14,10 @@ type CompileUnit struct {
 	entry *dwarf.Entry
 }
 
-func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]*dwarf.LineEntry, error) {
+// parseLineSection parse .(z)debug_line, return file, line entries
+func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (string, map[int][]*dwarf.LineEntry, error) {
 
+	file := ""
 	lineMappings := map[int][]*dwarf.LineEntry{}
 
 	for {
@@ -26,7 +28,11 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]
 			break
 		}
 		if err != nil {
-			return nil, err
+			return "", nil, err
+		}
+
+		if len(file) == 0 {
+			file = lnEntry.File.Name
 		}
 
 		//fmt.Printf("compile unit: %s, line entry: %v\n", c.name(), lnEntry)
@@ -39,7 +45,7 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]
 		lineMappings[lnEntry.Line] = append(lineMappings[lnEntry.Line], &dup)
 	}
 
-	return lineMappings, nil
+	return file, lineMappings, nil
 }
 
 func (c *CompileUnit) name() string {
