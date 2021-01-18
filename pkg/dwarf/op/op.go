@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hitzhangjie/godbg/dwarf/util"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
 )
 
 // Opcode represent a DWARF stack program instruction.

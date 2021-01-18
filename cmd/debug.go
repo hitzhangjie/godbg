@@ -21,7 +21,7 @@ import (
 	"os/exec"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -53,12 +53,14 @@ var debugCmd = &cobra.Command{
 		}
 
 		// start tracee and wait tracee stopped
-		dbp, err := target.NewTargetProcess(BuildExecName)
+		// TODO allow passing arguments after `--`
+		dbp, err := target.NewDebuggedProcess(BuildExecName)
+		//dbp, err := target.NewDebuggedProcess(BuildExecName)
 		if err != nil {
 			return err
 		}
-		target.DebuggedProcess = dbp
-		target.DebuggedProcess.Kind = target.DEBUG
+		target.DBPProcess = dbp
+		target.DBPProcess.Kind = target.DEBUG
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {

@@ -3,7 +3,7 @@ package debug
 import (
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ var stepCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 
-		dbp := target.DebuggedProcess
+		dbp := target.DBPProcess
 
 		defer func() {
 			if err != nil {

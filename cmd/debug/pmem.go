@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"unsafe"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ var pmemCmd = &cobra.Command{
 		bytes := count * size
 		buf := make([]byte, bytes, bytes)
 
-		n, err := target.DebuggedProcess.ReadMemory(uintptr(readAt), buf)
+		n, err := target.DBPProcess.ReadMemory(uintptr(readAt), buf)
 		if err != nil || n != int(bytes) {
 			return fmt.Errorf("read %d bytes, error: %v", n, err)
 		}

@@ -34,9 +34,7 @@ var rootCmd = &cobra.Command{
 希望我们的工作可以为更多人打开一个认识计算机世界的大门，不谢！`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	//Start: func(cmd *cobra.Command, args []string) {
-	//	// TODO comment out this, this should be enabled only in debugging phase
-	//	debug.NewDebugShell().Start()
+	//Run: func(cmd *cobra.Command, args []string) {
 	//},
 }
 

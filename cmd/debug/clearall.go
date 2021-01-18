@@ -3,7 +3,7 @@ package debug
 import (
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 
 	"github.com/spf13/cobra"
 )
@@ -17,8 +17,8 @@ var clearallCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//fmt.Println("clearall")
-		for _, brk := range target.DebuggedProcess.Breakpoints {
-			_, err := target.DebuggedProcess.ClearBreakpoint(brk.Addr)
+		for _, brk := range target.DBPProcess.Breakpoints {
+			_, err := target.DBPProcess.ClearBreakpoint(brk.Addr)
 			if err != nil {
 				return fmt.Errorf("清除断点%d失败\n", brk.ID)
 			}

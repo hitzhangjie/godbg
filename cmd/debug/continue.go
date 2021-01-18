@@ -3,7 +3,7 @@ package debug
 import (
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -16,13 +16,13 @@ var continueCmd = &cobra.Command{
 	Aliases: []string{"c"},
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 
-		dbp := target.DebuggedProcess
+		dbp := target.DBPProcess
 		defer func() {
 			if err != nil {
 				return
 			}
 			// display current pc
-			regs, err := target.DebuggedProcess.ReadRegister()
+			regs, err := target.DBPProcess.ReadRegister()
 			if err != nil {
 				fmt.Printf("get regs error: %v", err)
 			}

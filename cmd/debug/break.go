@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ var breakCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			pc, _, err := target.DebuggedProcess.Table.LineToPC(file, lineno)
+			pc, _, err := target.DBPProcess.Table.LineToPC(file, lineno)
 			if err != nil {
 				return fmt.Errorf("invalid loc: %s, err: %v", locStr, err)
 			}
@@ -62,7 +62,7 @@ var breakCmd = &cobra.Command{
 
 	BREAK:
 		// target add breakpoint
-		_, err = target.DebuggedProcess.AddBreakpoint(uintptr(addr))
+		_, err = target.DBPProcess.AddBreakpoint(uintptr(addr))
 		if err != nil {
 			return err
 		}

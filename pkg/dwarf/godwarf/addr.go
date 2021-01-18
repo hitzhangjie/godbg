@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/hitzhangjie/godbg/dwarf/util"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
 )
 
 // DebugAddrSection represents the debug_addr section of DWARFv5.

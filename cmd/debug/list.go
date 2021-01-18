@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 	cobraprompt "github.com/stromland/cobra-prompt"
 )
@@ -39,18 +39,18 @@ var listCmd = &cobra.Command{
 
 		} else {
 
-			regs, err := target.DebuggedProcess.ReadRegister()
+			regs, err := target.DBPProcess.ReadRegister()
 			if err != nil {
 				return err
 			}
 			pc := regs.PC()
 
-			_, ok := target.DebuggedProcess.Breakpoints[uintptr(pc)]
+			_, ok := target.DBPProcess.Breakpoints[uintptr(pc)]
 			if ok {
 				pc--
 			}
 
-			file, lineno, fn = target.DebuggedProcess.Table.PCToLine(pc)
+			file, lineno, fn = target.DBPProcess.Table.PCToLine(pc)
 			if fn == nil {
 				return errors.New("invalid locspec")
 			}
@@ -115,18 +115,18 @@ func parseFileLineno(s string) (file string, lineno int, err error) {
 }
 
 func parseLocationByPC() (file string, lineno int, err error) {
-	regs, err := target.DebuggedProcess.ReadRegister()
+	regs, err := target.DBPProcess.ReadRegister()
 	if err != nil {
 		return
 	}
 
 	pc := regs.PC()
-	_, ok := target.DebuggedProcess.Breakpoints[uintptr(pc)]
+	_, ok := target.DBPProcess.Breakpoints[uintptr(pc)]
 	if ok {
 		pc--
 	}
 
-	file, lineno, fn := target.DebuggedProcess.Table.PCToLine(pc)
+	file, lineno, fn := target.DBPProcess.Table.PCToLine(pc)
 	if fn == nil {
 		err = errors.New("invalid locspec")
 		return

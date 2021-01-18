@@ -16,8 +16,8 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/hitzhangjie/godbg/dwarf/op"
-	"github.com/hitzhangjie/godbg/dwarf/util"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
 )
 
 const (

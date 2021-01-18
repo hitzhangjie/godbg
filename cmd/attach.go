@@ -22,8 +22,7 @@ import (
 	"strconv"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
-	"github.com/hitzhangjie/godbg/target"
-
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +46,7 @@ var attachCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		target.DebuggedProcess = dbp
+		target.DBPProcess = dbp
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {

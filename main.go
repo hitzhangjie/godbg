@@ -21,7 +21,7 @@ import (
 	"syscall"
 
 	"github.com/hitzhangjie/godbg/cmd"
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func processSignals() {
 			break
 		case syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT:
 			os.RemoveAll(cmd.BuildExecName)
-			syscall.Kill(target.DebuggedProcess.Process.Pid, 0)
+			syscall.Kill(target.DBPProcess.Process.Pid, 0)
 			os.Exit(0)
 		}
 	}

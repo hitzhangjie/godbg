@@ -5,7 +5,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ func init() {
 // Cleanup 清理调试会话
 func Cleanup() {
 	var (
-		dbp = target.DebuggedProcess
+		dbp = target.DBPProcess
 		err error
 	)
 	// 根据被调试进程创建的方式，debug、exec or attach，来决定如何做善后处理

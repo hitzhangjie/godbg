@@ -30,6 +30,11 @@ const (
 	suggestionListSourceFiles = "ListSourceFiles"
 )
 
+var debugRootCmd = &cobra.Command{
+	Use:   "help [command]",
+	Short: descShort,
+}
+
 var (
 	CurrentSession *DebugSession
 )
@@ -125,11 +130,6 @@ func completer(line string) []string {
 		}
 	}
 	return cmds
-}
-
-var debugRootCmd = &cobra.Command{
-	Use:   "help [command]",
-	Short: descShort,
 }
 
 // helpMessageByGroups 将各个命令按照分组归类，再展示帮助信息

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/dwarf/godwarf"
-	"github.com/hitzhangjie/godbg/dwarf/op"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
 )
 
 type Reader struct {

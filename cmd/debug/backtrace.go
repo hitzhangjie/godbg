@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -20,10 +20,10 @@ var backtraceCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		pid := target.DebuggedProcess.Process.Pid
+		pid := target.DBPProcess.Process.Pid
 
 		// 获取当前寄存器状态
-		regs, err := target.DebuggedProcess.ReadRegister()
+		regs, err := target.DBPProcess.ReadRegister()
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ var backtraceCmd = &cobra.Command{
 			//addr := rbp
 			buf := make([]byte, 16)
 
-			n, err := target.DebuggedProcess.ReadMemory(uintptr(bp), buf)
+			n, err := target.DBPProcess.ReadMemory(uintptr(bp), buf)
 			if err != nil || n != 16 {
 				return fmt.Errorf("read mermory err: %v, bytes: %d", err, n)
 			}

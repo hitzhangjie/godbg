@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +18,7 @@ var pregsCmd = &cobra.Command{
 		cmdGroupAnnotation: cmdGroupInfo,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		regs, err := target.DebuggedProcess.ReadRegister()
+		regs, err := target.DBPProcess.ReadRegister()
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}

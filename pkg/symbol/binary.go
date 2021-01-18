@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/hitzhangjie/godbg/dwarf/frame"
-	"github.com/hitzhangjie/godbg/dwarf/godwarf"
-	"github.com/hitzhangjie/godbg/dwarf/reader"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/frame"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/reader"
 	"golang.org/x/arch/x86/x86asm"
 )
 
@@ -33,10 +33,10 @@ type BinaryInfo struct {
 	curFunction    *Function
 }
 
-// Analyze Analyze executable `execfile` and return the binary info
-func Analyze(fname string) (*BinaryInfo, error) {
+// Analyze Analyze executable `execFile` and return the binary info
+func Analyze(execFile string) (*BinaryInfo, error) {
 
-	file, err := elf.Open(fname)
+	file, err := elf.Open(execFile)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (bi *BinaryInfo) getSingleMemInst(pid int, pc uint64) (x86asm.Inst, error) 
 	return inst, nil
 }
 
-func (bi *BinaryInfo) dump() {
+func (bi *BinaryInfo) Dump() {
 	// debug source log
 	for file, mp := range bi.Sources {
 		for line, lineEntryArray := range mp {

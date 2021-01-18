@@ -19,7 +19,7 @@ import (
 	"errors"
 
 	"github.com/hitzhangjie/godbg/cmd/debug"
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 
 	"github.com/spf13/cobra"
 )
@@ -36,12 +36,12 @@ var execCmd = &cobra.Command{
 		}
 
 		// start tracee and wait tracee stopped
-		dbp, err := target.NewTargetProcess(args[0])
+		dbp, err := target.NewDebuggedProcess(args[0])
 		if err != nil {
 			return err
 		}
-		target.DebuggedProcess = dbp
-		target.DebuggedProcess.Kind = target.EXEC
+		target.DBPProcess = dbp
+		target.DBPProcess.Kind = target.EXEC
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {

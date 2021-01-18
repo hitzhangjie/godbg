@@ -7,5 +7,5 @@ import (
 type Thread struct {
 	Tid     int
 	Status  syscall.WaitStatus
-	Process *TargetProcess
+	Process *DebuggedProcess
 }

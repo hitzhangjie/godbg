@@ -3,7 +3,7 @@ package debug
 import (
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,7 @@ var disassCmd = &cobra.Command{
 			syntax, _ = cmd.Flags().GetString("syntax")
 		)
 		// 读取PC值
-		regs, err := target.DebuggedProcess.ReadRegister()
+		regs, err := target.DBPProcess.ReadRegister()
 		if err != nil {
 			return err
 		}
@@ -28,33 +28,33 @@ var disassCmd = &cobra.Command{
 
 		// 检测addr处是否为断点
 		buf := make([]byte, 1)
-		n, err := target.DebuggedProcess.ReadMemory(uintptr(addr-1), buf)
+		n, err := target.DBPProcess.ReadMemory(uintptr(addr-1), buf)
 		if err != nil || n != 1 {
 			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
 		}
 
 		// read a breakpoint
 		if buf[0] == 0xcc {
-			brk, err := target.DebuggedProcess.ClearBreakpoint(uintptr(addr - 1))
+			brk, err := target.DBPProcess.ClearBreakpoint(uintptr(addr - 1))
 			if err == target.ErrBreakpointNotExisted {
 				// this 0xcc is not patched by debugger, decode from `addr`
-				return target.DebuggedProcess.Disassemble(addr, max, syntax)
+				return target.DBPProcess.Disassemble(addr, max, syntax)
 			}
 			if err != nil {
 				// debugger inner error
 				return fmt.Errorf("clear breakpoint err: %v", err)
 			}
-			defer target.DebuggedProcess.AddBreakpoint(brk.Addr)
+			defer target.DBPProcess.AddBreakpoint(brk.Addr)
 
 			// rewind 1 byte
 			regs.SetPC(regs.PC() - 1)
-			if err = target.DebuggedProcess.WriteRegister(regs); err != nil {
+			if err = target.DBPProcess.WriteRegister(regs); err != nil {
 				return err
 			}
 		}
 
 		// disassemble instructions
-		return target.DebuggedProcess.Disassemble(addr, max, syntax)
+		return target.DBPProcess.Disassemble(addr, max, syntax)
 	},
 }
 

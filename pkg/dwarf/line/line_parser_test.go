@@ -14,7 +14,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/hitzhangjie/godbg/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/godwarf"
 )
 
 var userTestFile string

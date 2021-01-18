@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ var breaksCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bs := target.Breakpoints{}
-		for _, b := range target.DebuggedProcess.Breakpoints {
+		for _, b := range target.DBPProcess.Breakpoints {
 			bs = append(bs, b)
 		}
 		sort.Sort(bs)

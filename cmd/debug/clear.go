@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/target"
+	"github.com/hitzhangjie/godbg/pkg/target"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +25,7 @@ var clearCmd = &cobra.Command{
 
 		// 查找断点
 		var brk *target.Breakpoint
-		for _, b := range target.DebuggedProcess.Breakpoints {
+		for _, b := range target.DBPProcess.Breakpoints {
 			if b.ID != id {
 				continue
 			}
@@ -38,7 +38,7 @@ var clearCmd = &cobra.Command{
 		}
 
 		// 移除断点
-		_, err = target.DebuggedProcess.ClearBreakpoint(brk.Addr)
+		_, err = target.DBPProcess.ClearBreakpoint(brk.Addr)
 		if err != nil {
 			return err
 		}
