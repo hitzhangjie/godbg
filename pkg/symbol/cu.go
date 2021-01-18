@@ -35,8 +35,6 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (string, ma
 			file = lnEntry.File.Name
 		}
 
-		//fmt.Printf("compile unit: %s, line entry: %v\n", c.name(), lnEntry)
-
 		if lnEntry.File == nil {
 			continue
 		}

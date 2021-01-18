@@ -23,8 +23,7 @@ var listCmd = &cobra.Command{
 		var (
 			file   string
 			lineno int
-			//fn     *gosym.Func
-			err error
+			err    error
 		)
 
 		// parse location
@@ -47,12 +46,6 @@ var listCmd = &cobra.Command{
 			if ok {
 				pc--
 			}
-
-			//file, lineno, fn = target.DBPProcess.Table.PCToLine(pc)
-			//if fn == nil {
-			//	return errors.New("invalid locspec")
-			//}
-			//fmt.Printf("gopclntab get file:lineno = %s:%d\n", file, lineno)
 
 			file, lineno, err = target.DBPProcess.BInfo.PCToFileLine(pc)
 			if err != nil {

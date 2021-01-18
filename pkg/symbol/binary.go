@@ -317,42 +317,42 @@ func (bi *BinaryInfo) Dump() {
 		}
 	}
 
-	//// debug compile unit
-	//for _, cu := range bi.CompileUnits {
-	//	fmt.Printf("compile unit: %s\n", cu.name())
-	//}
-	//
-	//// debug frame log
-	//for i, v := range bi.FdeEntries {
-	//	if v.CIE != nil {
-	//		fmt.Printf("bi.frames index: %d, cie: %v\n", i, v.CIE)
-	//		continue
-	//	}
-	//	fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
-	//}
-	//
-	//// dump functions
-	//for _, fn := range bi.Functions {
-	//	for _, field := range fn.entry.Field {
-	//		fmt.Println("|================= START ===========================|")
-	//		fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
-	//			field.Attr.String(),
-	//			fmt.Sprintf("%v", field.Val),
-	//			fmt.Sprintf("%s", field.Class))
-	//		fmt.Println("|================== END ============================|")
-	//	}
-	//}
-	//
-	//// debug variables
-	//for _, fn := range bi.Functions {
-	//	for _, entry := range fn.variables {
-	//		fields := entry.Field
-	//		fmt.Println("|================= START ===========================|")
-	//		for _, field := range fields {
-	//			fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n",
-	//				entry.Tag.GoString(), field.Attr.String(), field.Val, field.Class)
-	//		}
-	//		fmt.Println("|================== END ============================|")
-	//	}
-	//}
+	// debug compile unit
+	for _, cu := range bi.CompileUnits {
+		fmt.Printf("compile unit: %s\n", cu.name())
+	}
+
+	// debug frame log
+	for i, v := range bi.FdeEntries {
+		if v.CIE != nil {
+			fmt.Printf("bi.frames index: %d, cie: %v\n", i, v.CIE)
+			continue
+		}
+		fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
+	}
+
+	// dump functions
+	for _, fn := range bi.Functions {
+		for _, field := range fn.entry.Field {
+			fmt.Println("|================= START ===========================|")
+			fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
+				field.Attr.String(),
+				fmt.Sprintf("%v", field.Val),
+				fmt.Sprintf("%s", field.Class))
+			fmt.Println("|================== END ============================|")
+		}
+	}
+
+	// debug variables
+	for _, fn := range bi.Functions {
+		for _, entry := range fn.variables {
+			fields := entry.Field
+			fmt.Println("|================= START ===========================|")
+			for _, field := range fields {
+				fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n",
+					entry.Tag.GoString(), field.Attr.String(), field.Val, field.Class)
+			}
+			fmt.Println("|================== END ============================|")
+		}
+	}
 }

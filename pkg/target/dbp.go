@@ -38,9 +38,6 @@ type DebuggedProcess struct {
 	ptraceCh   chan func() // ptrace请求统一发送到这里，由专门协程处理
 	ptraceDone chan int    // ptrace请求完成
 	stopCh     chan int    // 通知需要停止调试
-
-	//Deprecated 使用BinaryInfo代替（使用.(z)debug_line代替.gopclntab+.gosymtab
-	//Table       *gosym.Table            // 用来在pc和file lineno、func之间做转换
 }
 
 // NewDebuggedProcess 创建一个待调试进程
@@ -114,16 +111,9 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 		//
 		//err = syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
-	// load line table
-	//err = target.loadLineTable()
-	//if err != nil {
-	//	return nil, err
-	//}
 
 	// load binary ifo
 	bi, err := symbol.Analyze(cmd)
@@ -197,12 +187,6 @@ func AttachTargetProcess(pid int) (*DebuggedProcess, error) {
 		return nil, err
 	}
 
-	// load line table
-	//err = target.loadLineTable()
-	//if err != nil {
-	//	return nil, err
-	//}
-
 	return &target, nil
 }
 
@@ -251,36 +235,6 @@ func (t *DebuggedProcess) launchCommand(execName string, args ...string) (*os.Pr
 
 	return progCmd.Process, nil
 }
-
-//func (t *DebuggedProcess) loadLineTable() error {
-//
-//	// open elf file
-//	file, err := elf.Open(fmt.Sprintf("/proc/%d/exe", t.Process.Pid))
-//	if err != nil {
-//		return err
-//	}
-//
-//	// read elf sections
-//	v := file.Section(".gopclntab")
-//	pcln, err := v.Data()
-//	if err != nil {
-//		return err
-//	}
-//
-//	sym, err := file.Section(".gosymtab").Data()
-//	if err != nil {
-//		return err
-//	}
-//
-//	lntab := gosym.NewLineTable(pcln, v.Addr)
-//	tab, err := gosym.NewTable(sym, lntab)
-//	if err != nil {
-//		return err
-//	}
-//
-//	t.Table = tab
-//	return nil
-//}
 
 func (t *DebuggedProcess) ExecPtrace(fn func()) {
 	t.once.Do(func() {
@@ -361,13 +315,6 @@ func (t *DebuggedProcess) Detach() error {
 			continue
 		}
 		fmt.Printf("thread %d detached succ\n", tid)
-
-		//var status syscall.WaitStatus
-		//_, err = syscall.Wait4(tid, &status, 0, nil)
-		//if err != nil {
-		//	return err
-		//}
-		//fmt.Printf("thread %d detached, status: %v\n", status)
 	}
 	return nil
 }
