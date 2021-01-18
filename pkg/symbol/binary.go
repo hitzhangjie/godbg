@@ -107,10 +107,20 @@ func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 				return err
 			}
 
-			if bi.Sources[cu.name()] == nil {
+			orig, ok := bi.Sources[cu.name()]
+			if !ok || orig == nil {
 				bi.Sources[cu.name()] = lineMappings
-			} else {
-				panic("single file is split into multiple compilation units????")
+				continue
+			}
+			//panic("single file is split into multiple compilation units????")
+			for ln, entries := range lineMappings {
+				if v, ok := orig[ln]; !ok {
+					orig[ln] = entries
+					continue
+				} else {
+					v = append(v, entries...)
+					orig[ln] = v
+				}
 			}
 		}
 
@@ -131,12 +141,6 @@ func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 		// parse variables defined in subprogram
 		if entry.Tag == dwarf.TagVariable {
 			bi.curFunction.variables = append(bi.curFunction.variables, entry)
-			fmt.Println("|================= START ===========================|")
-			fields := entry.Field
-			for _, field := range fields {
-				fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n", entry.Tag.GoString(), field.Attr.String(), field.Class)
-			}
-			fmt.Println("|================== END ============================|")
 		}
 	}
 
@@ -303,21 +307,51 @@ func (bi *BinaryInfo) getSingleMemInst(pid int, pc uint64) (x86asm.Inst, error) 
 }
 
 func (bi *BinaryInfo) Dump() {
+
 	// debug source log
 	for file, mp := range bi.Sources {
 		for line, lineEntryArray := range mp {
 			for _, lineEntry := range lineEntryArray {
-				fmt.Printf("bi.sources file: %s, line: %s, addr: %#x\n", file, line, lineEntry.Address)
+				fmt.Printf("bi.sources file: %s, line: %d, addr: %#x\n", file, line, lineEntry.Address)
 			}
 		}
+	}
+
+	// debug compile unit
+	for _, cu := range bi.CompileUnits {
+		fmt.Printf("compile unit: %s\n", cu.name())
 	}
 
 	// debug frame log
 	for i, v := range bi.FdeEntries {
 		if v.CIE != nil {
-			fmt.Printf("bi.frames index: %d, cie: %vs\n", i, v.CIE)
+			fmt.Printf("bi.frames index: %d, cie: %v\n", i, v.CIE)
 			continue
 		}
 		fmt.Printf("bi.frames index: %d, fde: [%#x, %#x]\n", i, v.Begin(), v.End())
+	}
+
+	// dump functions
+	for _, fn := range bi.Functions {
+		for _, field := range fn.entry.Field {
+			fmt.Println("|================= START ===========================|")
+			fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
+				field.Attr.String(),
+				fmt.Sprintf("%v", field.Val),
+				fmt.Sprintf("%s", field.Class))
+			fmt.Println("|================== END ============================|")
+		}
+	}
+
+	// debug variables
+	for _, fn := range bi.Functions {
+		for _, entry := range fn.variables {
+			fields := entry.Field
+			fmt.Println("|================= START ===========================|")
+			for _, field := range fields {
+				fmt.Printf("%s Attr: %s, Val: %v, Class: %s\n", entry.Tag.GoString(), field.Attr.String(), field.Class)
+			}
+			fmt.Println("|================== END ============================|")
+		}
 	}
 }

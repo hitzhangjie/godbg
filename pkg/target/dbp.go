@@ -32,7 +32,7 @@ type DebuggedProcess struct {
 	Args    []string // 进程启动参数，方便重启调试
 	Kind    Kind     // 发起调试的类型
 
-	BinaryInfo  *symbol.BinaryInfo      // 符号层操作
+	BInfo       *symbol.BinaryInfo      // 符号层操作
 	Table       *gosym.Table            // 用来在pc和file lineno、func之间做转换
 	Breakpoints map[uintptr]*Breakpoint // 已经添加的断点
 
@@ -92,7 +92,7 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 	if err != nil {
 		return nil, err
 	}
-	bi.Dump()
+	target.BInfo = bi
 
 	return &target, nil
 }

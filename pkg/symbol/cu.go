@@ -2,7 +2,6 @@ package symbol
 
 import (
 	"debug/dwarf"
-	"fmt"
 	"io"
 )
 
@@ -30,7 +29,7 @@ func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (map[int][]
 			return nil, err
 		}
 
-		fmt.Printf("compile unit: %s, line entry: %v\n", c.name(), lnEntry)
+		//fmt.Printf("compile unit: %s, line entry: %v\n", c.name(), lnEntry)
 
 		if lnEntry.File == nil {
 			continue

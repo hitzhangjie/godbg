@@ -24,7 +24,7 @@ type Function struct {
 func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 
 	fields := curEntry.Field
-	fmt.Println("|================= START ===========================|")
+
 	for _, field := range fields {
 		switch field.Attr {
 		case dwarf.AttrName:
@@ -54,13 +54,7 @@ func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 		default:
 			fmt.Printf("analyze:TagSubprogram unknow attr field: %s", field)
 		}
-		// for debug log
-		fmt.Printf("TagSubprogram Attr: %s, Val: %v, Class: %v\n",
-			field.Attr.String(),
-			fmt.Sprintf("%v", field.Val),
-			fmt.Sprintf("%s", field.Class))
 	}
-	fmt.Println("|================== END ============================|")
 
 	f.entry = curEntry
 	return nil

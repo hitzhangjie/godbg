@@ -59,6 +59,13 @@ var debugCmd = &cobra.Command{
 			return err
 		}
 		target.DBPProcess = dbp
+
+		// 打印解析的符号信息，供调试用
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		if verbose {
+			dbp.BInfo.Dump()
+		}
+
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {
