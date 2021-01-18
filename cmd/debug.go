@@ -54,13 +54,11 @@ var debugCmd = &cobra.Command{
 
 		// start tracee and wait tracee stopped
 		// TODO allow passing arguments after `--`
-		dbp, err := target.NewDebuggedProcess(BuildExecName)
-		//dbp, err := target.NewDebuggedProcess(BuildExecName)
+		dbp, err := target.NewDebuggedProcess(BuildExecName, nil, target.DEBUG)
 		if err != nil {
 			return err
 		}
 		target.DBPProcess = dbp
-		target.DBPProcess.Kind = target.DEBUG
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {

@@ -43,22 +43,22 @@ type DebuggedProcess struct {
 }
 
 // NewDebuggedProcess 创建一个待调试进程
-func NewDebuggedProcess(cmd string, args ...string) (*DebuggedProcess, error) {
+func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess, error) {
 	var (
 		target DebuggedProcess
 		err    error
 	)
 	target = DebuggedProcess{
 		Process:     nil,
+		Threads:     map[int]*Thread{},
 		Command:     cmd,
 		Args:        args,
-		Threads:     map[int]*Thread{},
+		Kind:        kind,
 		Breakpoints: map[uintptr]*Breakpoint{},
-
-		once:       &sync.Once{},
-		ptraceCh:   make(chan func()),
-		ptraceDone: make(chan int),
-		stopCh:     make(chan int),
+		once:        &sync.Once{},
+		ptraceCh:    make(chan func()),
+		ptraceDone:  make(chan int),
+		stopCh:      make(chan int),
 	}
 	defer func() {
 		if err != nil {

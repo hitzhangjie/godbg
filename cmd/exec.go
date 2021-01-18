@@ -36,12 +36,11 @@ var execCmd = &cobra.Command{
 		}
 
 		// start tracee and wait tracee stopped
-		dbp, err := target.NewDebuggedProcess(args[0])
+		dbp, err := target.NewDebuggedProcess(args[0], nil, target.EXEC)
 		if err != nil {
 			return err
 		}
 		target.DBPProcess = dbp
-		target.DBPProcess.Kind = target.EXEC
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {
