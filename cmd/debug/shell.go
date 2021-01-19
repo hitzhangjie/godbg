@@ -125,8 +125,15 @@ func (s *DebugSession) Stop() {
 func completer(line string) []string {
 	cmds := []string{}
 	for _, c := range debugRootCmd.Commands() {
+		// complete cmd
 		if strings.HasPrefix(c.Use, line) {
 			cmds = append(cmds, strings.Split(c.Use, " ")[0])
+		}
+		// complete cmd's aliases
+		for _, alias := range c.Aliases {
+			if strings.HasPrefix(alias, line) {
+				cmds = append(cmds, alias)
+			}
 		}
 	}
 	return cmds

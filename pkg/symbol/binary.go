@@ -93,7 +93,7 @@ func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 
 		// parse compile unit and line table
 		if entry.Tag == dwarf.TagCompileUnit {
-			cu := &CompileUnit{entry: entry}
+			cu := &CompileUnit{entry: entry, bi: bi}
 			bi.curCompileUnit = cu
 			bi.curCompileUnitEntry = entry
 
@@ -102,25 +102,9 @@ func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
 				return err
 			}
 
-			filename, lineMappings, err := cu.parseLineSection(rd)
+			err = cu.parseLineSection(rd)
 			if err != nil {
 				return err
-			}
-
-			orig, ok := bi.Sources[filename]
-			if !ok || orig == nil {
-				bi.Sources[filename] = lineMappings
-				continue
-			}
-
-			for ln, entries := range lineMappings {
-				v, ok := orig[ln]
-				if !ok {
-					orig[ln] = entries
-					continue
-				}
-				v = append(v, entries...)
-				orig[ln] = v
 			}
 		}
 
@@ -263,9 +247,9 @@ func (bi *BinaryInfo) PCToFileLine(pc uint64) (string, int, error) {
 	rangeMin := &Rs{}
 	rangeMax := &Rs{}
 
-	for filename, filenameMp := range bi.Sources {
-		for lineno, lineEntryArray := range filenameMp {
-			for _, lineEntry := range lineEntryArray {
+	for filename, lineNoToLineEntries := range bi.Sources {
+		for lineno, entries := range lineNoToLineEntries {
+			for _, lineEntry := range entries {
 				if lineEntry.Address == pc {
 					return filename, lineno, nil
 				}

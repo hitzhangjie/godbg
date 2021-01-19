@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"syscall"
@@ -186,7 +187,6 @@ func AttachTargetProcess(pid int) (*DebuggedProcess, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &target, nil
 }
 
@@ -301,20 +301,15 @@ func (t *DebuggedProcess) Detach() error {
 	}
 
 	// Detach all threads
-	tids, err := t.loadThreadList()
-	if err != nil {
-		return err
-	}
-
-	for _, tid := range tids {
+	for _, thread := range t.Threads {
+		var err error
 		t.ExecPtrace(func() {
-			err = syscall.PtraceDetach(tid)
+			err = syscall.PtraceDetach(thread.Tid)
 		})
 		if err != nil {
-			fmt.Printf("thread %d detached error: %v\n", tid, err)
-			continue
+			return fmt.Errorf("thread %d detached error: %v\n", thread.Tid, err)
 		}
-		fmt.Printf("thread %d detached succ\n", tid)
+		fmt.Printf("thread %d detached succ\n", thread.Tid)
 	}
 	return nil
 }
@@ -404,6 +399,13 @@ func checkPid(pid int) bool {
 
 // ListBreakpoints 列出所有断点
 func (t *DebuggedProcess) ListBreakpoints() {
+
+	bs := Breakpoints{}
+	for _, b := range t.Breakpoints {
+		bs = append(bs, b)
+	}
+	sort.Sort(bs)
+
 	for _, b := range t.Breakpoints {
 		fmt.Printf("breakpoint[%d] addr:%#x, loc:%s\n", b.ID, b.Addr, b.Pos)
 	}
@@ -414,24 +416,33 @@ func (t *DebuggedProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
 	var (
 		breakpoint *Breakpoint
 		err        error
+		n          int
+
+		file string
+		line int
 	)
 
 	t.ExecPtrace(func() {
 		pid := DBPProcess.Process.Pid
 
 		orig := [1]byte{}
-		n, err := syscall.PtracePeekText(pid, addr, orig[:])
+		n, err = syscall.PtracePeekText(pid, addr, orig[:])
 		if err != nil || n != 1 {
-			err = fmt.Errorf("peek text, %d bytes, error: %v", n, err)
+			err = fmt.Errorf("peek text, pid: %d, %d bytes, error: %v", pid, n, err)
 			return
 		}
 
-		breakpoint = newBreakPoint(addr, orig[0], "")
+		file, line, err = t.BInfo.PCToFileLine(uint64(addr))
+		if err != nil {
+			return
+		}
+
+		breakpoint = newBreakPoint(addr, orig[0], fmt.Sprintf("%s:%d", file, line))
 		t.Breakpoints[addr] = breakpoint
 
 		n, err = syscall.PtracePokeText(pid, addr, []byte{0xCC})
 		if err != nil || n != 1 {
-			err = fmt.Errorf("poke text, %d bytes, error: %v", n, err)
+			err = fmt.Errorf("poke text, pid:%d, %d bytes, error: %v", pid, n, err)
 			return
 		}
 	})

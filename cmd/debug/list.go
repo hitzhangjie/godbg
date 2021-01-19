@@ -59,6 +59,7 @@ var listCmd = &cobra.Command{
 	},
 }
 
+// list file lines, lineno is zero-based
 func listFileLines(file string, lineno, rng int) error {
 
 	lines, offset, err := listFile(file, lineno, rng)
@@ -66,7 +67,8 @@ func listFileLines(file string, lineno, rng int) error {
 		return fmt.Errorf("list file err: %v", err)
 	}
 
-	idx := offset
+	// use 1-based counter
+	idx := offset + 1
 	for _, ln := range lines {
 		if idx != lineno {
 			fmt.Printf("%-4s\t%d\t%s\n", "", idx, ln)
@@ -112,6 +114,7 @@ func parseFileLineno(s string) (file string, lineno int, err error) {
 	return
 }
 
+// return value `offset` is zero-based counter
 func listFile(file string, lineno, rng int) (lines []string, offset int, err error) {
 	dat, err := ioutil.ReadFile(file)
 	if err != nil {

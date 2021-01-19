@@ -24,7 +24,7 @@ var breakCmd = &cobra.Command{
 		cmdGroupAnnotation: cmdGroupBreakpoints,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		//fmt.Printf("break %s\n", strings.Join(args, " "))
+
 		if len(args) != 1 {
 			return errors.New("参数错误")
 		}
@@ -34,12 +34,13 @@ var breakCmd = &cobra.Command{
 			err  error
 		)
 
-		// try parse as address
 		locStr := args[0]
+
+		// try parse as address
 		{
 			addr, err = parseAddress(locStr)
 			if err == nil {
-				goto BREAK
+				goto ADD_BREAKPOINT
 			}
 		}
 
@@ -54,20 +55,19 @@ var breakCmd = &cobra.Command{
 				return err
 			}
 
-			pc, err := target.DBPProcess.BInfo.FileLineToPC(file, lineno)
+			addr, err = target.DBPProcess.BInfo.FileLineToPC(file, lineno)
 			if err != nil {
 				return fmt.Errorf("fileline to pc err: %v", err)
 			}
-			fmt.Printf("line table get addr: %#x\n", pc)
+			fmt.Printf("add breakpoint %s, addr: %#x\n", locStr, addr)
 		}
 
-	BREAK:
+	ADD_BREAKPOINT:
 		// target add breakpoint
 		_, err = target.DBPProcess.AddBreakpoint(uintptr(addr))
 		if err != nil {
 			return err
 		}
-		fmt.Printf("添加断点成功\n")
 		return nil
 	},
 }

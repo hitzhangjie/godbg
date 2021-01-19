@@ -2,6 +2,7 @@ package debug
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
@@ -24,7 +25,8 @@ var continueCmd = &cobra.Command{
 			// display current pc
 			regs, err := target.DBPProcess.ReadRegister()
 			if err != nil {
-				fmt.Printf("get regs error: %v", err)
+				fmt.Fprintf(os.Stderr, "get regs error: %v\n", err)
+				return
 			}
 			fmt.Printf("continue ok, current PC: %#x\n", regs.PC())
 		}()

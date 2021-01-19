@@ -10,40 +10,43 @@ import (
 // see DWARFv4 3.1.1 normal and partial compilation unit entries
 type CompileUnit struct {
 	functions []*Function
-
-	entry *dwarf.Entry
+	entry     *dwarf.Entry
+	bi        *BinaryInfo
 }
 
 // parseLineSection parse .(z)debug_line, return file, line entries
-func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) (string, map[int][]*dwarf.LineEntry, error) {
+//
+// note: one compile unit may contains more than one source files.
+func (c *CompileUnit) parseLineSection(lineReader *dwarf.LineReader) error {
 
-	file := ""
-	lineMappings := map[int][]*dwarf.LineEntry{}
+	entry := dwarf.LineEntry{}
 
 	for {
-		lnEntry := dwarf.LineEntry{}
-		err := lineReader.Next(&lnEntry)
-
+		// scan next entry
+		err := lineReader.Next(&entry)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return "", nil, err
+			return err
 		}
-
-		if len(file) == 0 {
-			file = lnEntry.File.Name
-		}
-
-		if lnEntry.File == nil {
+		if entry.File == nil {
 			continue
 		}
 
-		dup := lnEntry
-		lineMappings[lnEntry.Line] = append(lineMappings[lnEntry.Line], &dup)
+		// append line entries
+		file := entry.File.Name
+		entries, ok := c.bi.Sources[file]
+		if !ok {
+			entries = make(map[int][]*dwarf.LineEntry)
+			c.bi.Sources[file] = entries
+		}
+
+		dup := entry
+		entries[entry.Line] = append(entries[entry.Line], &dup)
 	}
 
-	return file, lineMappings, nil
+	return nil
 }
 
 func (c *CompileUnit) name() string {
