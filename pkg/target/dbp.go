@@ -401,6 +401,11 @@ func checkPid(pid int) bool {
 
 // --------------------------------------------------------------------
 
+func (t *DebuggedProcess) IsBreakpoint(addr uintptr) bool {
+	_, ok := t.Breakpoints[addr]
+	return ok
+}
+
 // ListBreakpoints 列出所有断点
 func (t *DebuggedProcess) ListBreakpoints() {
 
@@ -501,11 +506,11 @@ func (t *DebuggedProcess) Continue() error {
 	}
 
 	wpid, status, err := t.wait(t.Process.Pid, syscall.WALL)
-	fmt.Printf("thread %d status: %v\n", wpid, desc(status))
+	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
 	return err
 }
 
-func desc(status *syscall.WaitStatus) string {
+func descStatus(status *syscall.WaitStatus) string {
 	switch {
 	case status.Continued():
 		return "continued"
@@ -581,6 +586,193 @@ func (t *DebuggedProcess) ContinueX() error {
 	return err
 }
 
+// Deprecated too slow
+func (t *DebuggedProcess) Next() error {
+	var (
+		loop = true
+
+		origFile   string
+		origLineNo int
+
+		newFile   string
+		newLineNo int
+	)
+
+	// 获取当前行位置
+	regs, err := t.ReadRegister()
+	if err != nil {
+		return err
+	}
+
+	if ok := t.IsBreakpoint(uintptr(regs.PC() - 1)); !ok {
+		origFile, origLineNo, err = t.BInfo.PCToFileLine(regs.PC())
+	} else {
+		origFile, origLineNo, err = t.BInfo.PCToFileLine(regs.PC() - 1)
+	}
+	if err != nil {
+		return err
+	}
+
+	//calling := false
+	//callingRet := uint64(0)
+
+	for loop {
+		regs, err := t.ReadRegister()
+		if err != nil {
+			return err
+		}
+
+		pc := regs.PC()
+
+		if ok := t.IsBreakpoint(uintptr(pc - 1)); ok {
+			brk, err := t.ClearBreakpoint(uintptr(pc - 1))
+			if err != nil {
+				return err
+			}
+			defer t.AddBreakpoint(brk.Addr)
+
+			pc--
+			regs.SetPC(pc)
+			err = t.WriteRegister(regs)
+			if err != nil {
+				return err
+			}
+		}
+
+		//inst, err := t.DisassembleSingleInstruction(pc)
+		//if err != nil {
+		//	return err
+		//}
+
+		// call指令，不用跳过去逐指令执行
+		//if inst.Op == x86asm.CALL || inst.Op == x86asm.LCALL {
+		//	calling = true
+		//	callingRet = pc + uint64(inst.Len)
+		//	continue
+		//}
+
+		_, err = t.SingleStep()
+		if err != nil {
+			return err
+		}
+
+		regs, err = t.ReadRegister()
+		if err != nil {
+			return err
+		}
+
+		newFile, newLineNo, err = t.BInfo.PCToFileLine(regs.PC())
+		if err != nil {
+			return err
+		}
+		if !(newFile == origFile && newLineNo == origLineNo) {
+			break
+		}
+		fmt.Printf("continue at %s:%d, pc: %#x\n", newFile, newLineNo, regs.PC())
+	}
+
+	fmt.Printf("stopped at %s:%d, pc: %#x\n", newFile, newLineNo, regs.PC())
+	return nil
+}
+
+func (t *DebuggedProcess) NextX() error {
+	var (
+		err         error
+		ok          bool
+		filename    string
+		lineno      int
+		oldfilename string
+		oldlineno   int
+		inst        *x86asm.Inst
+	)
+
+	regs, err := t.ReadRegister()
+	if err != nil {
+		return err
+	}
+	pc := regs.PC()
+
+	if ok = t.IsBreakpoint(uintptr(pc - 1)); ok {
+		pc--
+		regs.SetPC(pc)
+		if err = t.WriteRegister(regs); err != nil {
+			return err
+		}
+		if brk, err := t.ClearBreakpoint(uintptr(pc - 1)); err != nil {
+			return err
+		} else {
+			defer t.AddBreakpoint(brk.Addr)
+		}
+	}
+
+	if oldfilename, oldlineno, err = t.BInfo.PCToFileLine(pc); err != nil {
+		return err
+	}
+
+	calling := false
+	callingfpc := uint64(0)
+
+	for {
+		regs, err := t.ReadRegister()
+		if err != nil {
+			return err
+		}
+		pc := regs.PC()
+
+		if ok := t.IsBreakpoint(uintptr(pc - 1)); ok {
+			descLoc(t, pc-1)
+		}
+
+		if calling == true && pc != callingfpc {
+			if _, err = t.SingleStep(); err != nil {
+				return err
+			}
+		} else if calling == true && pc == callingfpc {
+			calling = false
+			if filename, lineno, err = t.BInfo.PCToFileLine(pc); err != nil {
+				return err
+			}
+			if !(filename == oldfilename && lineno == oldlineno) {
+				descLoc(t, pc-1)
+				return nil
+			}
+		} else {
+			if inst, err = t.DisassembleSingleInstruction(pc); err != nil {
+				return err
+			}
+			if inst.Op == x86asm.CALL || inst.Op == x86asm.LCALL {
+				calling = true
+				callingfpc = pc + uint64(inst.Len)
+				continue
+			}
+
+			if _, err = t.SingleStep(); err != nil {
+				return err
+			}
+			if filename, lineno, err = t.BInfo.PCToFileLine(pc + uint64(inst.Len)); err != nil {
+				return err
+			}
+			if !(filename == oldfilename && lineno == oldlineno) {
+				descLoc(t, pc)
+				return nil
+			}
+		}
+	}
+}
+
+func descLoc(t *DebuggedProcess, pc uint64) error {
+
+	file, lineno, err := t.BInfo.PCToFileLine(pc - 1)
+	if err != nil {
+		return err
+	}
+
+	fn, err := t.BInfo.PCToFunction(pc - 1)
+
+	fmt.Printf("stopped at %s:%d, addr: %#x\n", file, lineno, fn.Name())
+	return nil
+}
+
 // SingleStep 执行一条指令
 func (t *DebuggedProcess) SingleStep() (*syscall.WaitStatus, error) {
 	var err error
@@ -606,6 +798,24 @@ func (t *DebuggedProcess) SingleStep() (*syscall.WaitStatus, error) {
 }
 
 // --------------------------------------------------------------------
+
+func (t *DebuggedProcess) DisassembleSingleInstruction(addr uint64) (*x86asm.Inst, error) {
+
+	// 指令数据
+	dat := make([]byte, 16)
+	n, err := t.ReadMemory(uintptr(addr), dat)
+	if err != nil || n == 0 {
+		return nil, fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+	}
+
+	// 反汇编这里的指令数据
+	inst, err := x86asm.Decode(dat, 64)
+	if err != nil {
+		return nil, fmt.Errorf("x86asm decode error: %v", err)
+	}
+
+	return &inst, nil
+}
 
 // Disassemble 反汇编地址addr处的指令
 func (t *DebuggedProcess) Disassemble(addr, max uint64, syntax string) error {

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	BuildExecName = "./__debug_bin__"
+	BuildExecName = "__debug_bin__"
 )
 
 // debugCmd represents the debug command
@@ -43,6 +43,7 @@ var debugCmd = &cobra.Command{
 		}
 
 		cmdArgs := []string{"build", "-gcflags=all=-N -l", "-ldflags=-compressdwarf=false", "-o", BuildExecName}
+		//cmdArgs := []string{"build", "-gcflags=all=-N -l", "-o", BuildExecName}
 		cmdArgs = append(cmdArgs, cmdName...)
 		buildCmd := exec.Command("go", cmdArgs...)
 
@@ -54,7 +55,7 @@ var debugCmd = &cobra.Command{
 
 		// start tracee and wait tracee stopped
 		// TODO allow passing arguments after `--`
-		dbp, err := target.NewDebuggedProcess(BuildExecName, nil, target.DEBUG)
+		dbp, err := target.NewDebuggedProcess("./"+BuildExecName, nil, target.DEBUG)
 		if err != nil {
 			return err
 		}
