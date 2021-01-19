@@ -2,6 +2,10 @@ package target
 
 import (
 	"bufio"
+	"bytes"
+	"debug/elf"
+	"debug/gosym"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -709,8 +713,164 @@ func (t *DebuggedProcess) WriteRegister(regs *syscall.PtraceRegs) error {
 // --------------------------------------------------------------------
 
 // Backtrace 获取调用栈信息
-func (t *DebuggedProcess) Backtrace() ([]byte, error) {
-	return nil, nil
+//
+// use .gopclntab, .gosymtab to build the mappings btw PC and fileLineNo,
+// use regs.BP() to read the caller's BP and return address,
+// then we could build the backtrace
+//
+// note: .gopclntab, .gosymtab only works for pure go program, not for cgo.
+func (t *DebuggedProcess) Backtrace() error {
+
+	pid := t.Process.Pid
+
+	// 获取当前寄存器状态
+	regs, err := t.ReadRegister()
+	if err != nil {
+		return err
+	}
+
+	// open elf file
+	file, err := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return err
+	}
+
+	// read elf sections
+	pcln, err := file.Section(".gopclntab").Data()
+	if err != nil {
+		return err
+	}
+
+	sym, err := file.Section(".gosymtab").Data()
+	if err != nil {
+		return err
+	}
+
+	lntab := gosym.NewLineTable(pcln, regs.PC())
+	tab, err := gosym.NewTable(sym, lntab)
+	if err != nil {
+		return err
+	}
+
+	// print stack trace
+	bp := regs.Rbp
+	pc := regs.PC()
+	idx := 0
+	ret := uint64(0)
+
+	f, n, fn := tab.PCToLine(pc - 1)
+	fmt.Printf("#%d %s %s:%d\n", idx, fn.Name, f, n)
+
+	for {
+		idx++
+		if bp == 0 {
+			break
+		}
+
+		//addr := rbp
+		buf := make([]byte, 16)
+
+		n, err := t.ReadMemory(uintptr(bp), buf)
+		if err != nil || n != 16 {
+			return fmt.Errorf("read mermory err: %v, bytes: %d", err, n)
+		}
+
+		// bp of previous caller stackframe
+		reader := bytes.NewBuffer(buf)
+		err = binary.Read(reader, binary.LittleEndian, &bp)
+		if err != nil {
+			return err
+		}
+
+		// ret address
+		err = binary.Read(reader, binary.LittleEndian, &ret)
+		if err != nil {
+			return err
+		}
+
+		// TODO：暂时不考虑内联、尾递归优化（go编译器暂时不支持尾递归优化）的话，ret基本上对应着调用方函数的栈帧，
+		// 但是为了让源代码位置更精准，这里的减去对ret减1
+		f, n, fn := tab.PCToLine(ret - 1)
+		fmt.Printf("#%d %s %s:%d\n", idx, fn.Name, f, n)
+	}
+	return nil
+}
+
+// BacktraceX 获取调用栈信息
+//
+// use .(z)debug_line to build the mappings btw PC and fileLineNo,
+// use regs.BP() to read the caller's BP and return address,
+// then we could build the backtrace.
+func (t *DebuggedProcess) BacktraceX() error {
+
+	// 获取当前寄存器状态
+	regs, err := t.ReadRegister()
+	if err != nil {
+		return err
+	}
+
+	// print stack trace
+	idx := 0
+	desc, err := t.frameInfo(regs.PC() - 1)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("#%d %s\n", idx, desc)
+
+	bp := regs.Rbp
+	ret := uint64(0)
+
+	idx++
+	for {
+		if bp == 0 {
+			break
+		}
+
+		//addr := rbp
+		buf := make([]byte, 16)
+
+		n, err := t.ReadMemory(uintptr(bp), buf)
+		if err != nil || n != 16 {
+			return fmt.Errorf("read mermory err: %v, bytes: %d", err, n)
+		}
+
+		// bp of previous caller stackframe
+		reader := bytes.NewBuffer(buf)
+		err = binary.Read(reader, binary.LittleEndian, &bp)
+		if err != nil {
+			return err
+		}
+
+		// ret address
+		err = binary.Read(reader, binary.LittleEndian, &ret)
+		if err != nil {
+			return err
+		}
+
+		// TODO：暂时不考虑内联、尾递归优化（go编译器暂时不支持尾递归优化）的话，ret基本上对应着调用方函数的栈帧，
+		// 但是为了让源代码位置更精准，这里的减去对ret减1
+		desc, err = t.frameInfo(ret - 1)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("#%d %s\n", idx, desc)
+	}
+	return nil
+}
+
+func (t *DebuggedProcess) frameInfo(pc uint64) (string, error) {
+	f, n, err := t.BInfo.PCToFileLine(pc)
+	if err != nil {
+		return "", err
+	}
+
+	fn, err := t.BInfo.PCToFunction(pc)
+	if err != nil {
+		return "", err
+	}
+
+	desc := fmt.Sprintf("%s %s:%d", fn.Name(), f, n)
+	return desc, nil
 }
 
 // Frame 返回${idx}th个栈帧的信息

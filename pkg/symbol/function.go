@@ -21,6 +21,10 @@ type Function struct {
 	cu        *CompileUnit
 }
 
+func (f *Function) Name() string {
+	return f.name
+}
+
 func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 
 	fields := curEntry.Field
