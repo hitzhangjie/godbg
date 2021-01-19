@@ -163,7 +163,7 @@ func prettyPrintMem(address uintptr, memArea []byte, littleEndian bool, format b
 			}
 		}
 		fmt.Fprintln(w, "")
-		address += uintptr(cols)
+		address += uintptr(cols * colBytes)
 	}
 	w.Flush()
 	return b.String()

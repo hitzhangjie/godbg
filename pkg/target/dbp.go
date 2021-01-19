@@ -3,6 +3,7 @@ package target
 import (
 	"bufio"
 	"bytes"
+	"debug/dwarf"
 	"debug/elf"
 	"debug/gosym"
 	"encoding/binary"
@@ -18,7 +19,11 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+	"unsafe"
 
+	"github.com/hitzhangjie/godbg/pkg/dwarf/frame"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
+	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
 	"github.com/hitzhangjie/godbg/pkg/symbol"
 	"golang.org/x/arch/x86/x86asm"
 	"golang.org/x/sys/unix"
@@ -1157,3 +1162,123 @@ const (
 	personalityGetPersonality = 0xffffffff // argument to pass to personality syscall to get the current personality
 	_ADDR_NO_RANDOMIZE        = 0x0040000  // ADDR_NO_RANDOMIZE linux constant
 )
+
+func (t *DebuggedProcess) PrintVariable(variable string) error {
+	regs, err := t.ReadRegister()
+	if err != nil {
+		return err
+	}
+	pc := regs.PC()
+
+	if ok := t.IsBreakpoint(uintptr(pc - 1)); ok {
+		pc--
+	}
+
+	var fde *frame.FrameDescriptionEntry
+	if fde, err = t.BInfo.PCToFDE(pc); err != nil {
+		return err
+	}
+	framectx := fde.EstablishFrame(pc)
+
+	framectx.RegsV = make([]uint64, 17)
+	framectx.RegsV[16] = regs.PC()
+	framectx.RegsV[7] = regs.Rsp
+	framectx.RegsV[6] = regs.Rbp
+
+	frameBaseRegister := fde.Begin()
+
+	switch framectx.CFA.Rule {
+	case frame.RuleCFA:
+		reg := framectx.CFA.Reg
+		if reg >= 17 {
+			return errors.New("invalid cfa register")
+		}
+		fmt.Printf("register: %d\n", reg)
+
+		if framectx.RegsV[framectx.CFA.Reg] == 0 {
+			return errors.New("invalid register value")
+		}
+
+		reg = framectx.RegsV[framectx.CFA.Reg]
+		frameBaseRegister = reg + uint64(framectx.CFA.Offset)
+	}
+
+	var fn *symbol.Function
+	if fn, err = t.BInfo.PCToFunction(pc); err != nil {
+		return err
+	}
+
+	var entry *dwarf.Entry
+
+	for _, fv := range fn.Variables() {
+		field := fv.AttrField(dwarf.AttrName)
+		if field == nil {
+			continue
+		}
+
+		fieldstr, ok := field.Val.(string)
+		if !ok || fieldstr != variable {
+			continue
+		}
+
+		entry = fv
+		break
+	}
+
+	if entry == nil {
+		return errors.New("variable not found")
+	}
+
+	location := entry.AttrField(dwarf.AttrLocation)
+	buf := bytes.NewBuffer(location.Val.([]byte))
+	opcode, err := buf.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	switch opcode {
+	case byte(op.DW_OP_fbreg):
+		offset, _ := util.DecodeSLEB128(buf)
+		address := frameBaseRegister + uint64(offset)
+		fmt.Printf("fde: %#x\n", address)
+
+		// if the type is `string`
+		//
+		// see StringHeader:
+		// https://sourcegraph.com/github.com/golang/go@dbab07983596c705d2ef12806e0f9d630063e571/-/blob/src/reflect/value.go#L1983
+		//
+
+		// ==> read StringHeader.Len
+		val := make([]byte, 8)
+		n, err := t.ReadMemory(uintptr(address)+uintptr(8), val)
+		if err != nil || n != 8 {
+			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
+		}
+		slen := binary.LittleEndian.Uint64(val)
+		fmt.Printf("string address: %#x\n", address)
+		fmt.Printf("bytes: %v\n", val)
+		fmt.Printf("slen: %d\n", slen)
+
+		// ==> read stringHeader.Data
+		n, err = t.ReadMemory(uintptr(address), val)
+		if err != nil || n != 8 {
+			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
+		}
+
+		addr := uintptr(binary.LittleEndian.Uint64(val))
+		if addr == 0 {
+			return fmt.Errorf("pointer addr %d shoulde be == 0", addr)
+		}
+		fmt.Printf("address = %#x,  len = %v, addr = %#x, num = %d\n", address, slen, addr, offset)
+
+		strbuf := make([]byte, slen)
+		n, err = t.ReadMemory(addr, strbuf)
+		if err != nil || int(slen) != n {
+			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
+		}
+		fmt.Printf("%ss\n", *(*string)(unsafe.Pointer(&strbuf)))
+		return nil
+	default:
+		return fmt.Errorf("not support dwarf variable, opcode: %v, entry: %#v", opcode, entry)
+	}
+}

@@ -25,6 +25,10 @@ func (f *Function) Name() string {
 	return f.name
 }
 
+func (f *Function) Variables() []*dwarf.Entry {
+	return f.variables
+}
+
 func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 
 	fields := curEntry.Field

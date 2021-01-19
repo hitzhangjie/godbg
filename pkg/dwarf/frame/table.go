@@ -153,6 +153,8 @@ type FrameContext struct {
 	RetAddrReg    uint64
 	codeAlignment uint64
 	dataAlignment int64
+
+	RegsV []uint64
 }
 
 // executeDwarfProgram execute DWARF program stored in frame.buf

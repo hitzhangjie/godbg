@@ -1,8 +1,9 @@
 package debug
 
 import (
-	"os"
+	"errors"
 
+	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
 )
 
@@ -13,8 +14,11 @@ var printCmd = &cobra.Command{
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupInfo,
 	},
-	Run: func(cmd *cobra.Command, args []string) {
-		os.Exit(0)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return errors.New("need variable name")
+		}
+		return target.DBPProcess.PrintVariable(args[0])
 	},
 }
 
