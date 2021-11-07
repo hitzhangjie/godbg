@@ -5,7 +5,6 @@ go 1.15
 replace github.com/stromland/cobra-prompt => github.com/hitzhangjie/cobra-prompt v0.0.0-20201118115017-e51f84e8374c
 
 require (
-	github.com/go-delve/delve v1.5.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/peterh/liner v0.0.0-20170317030525-88609521dc4b
 	github.com/spf13/cobra v1.1.1

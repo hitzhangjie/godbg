@@ -1,4 +1,4 @@
-FROM hitzhangjie/linux101
+FROM hitzhangjie/linux101:latest
 
 USER root
 
