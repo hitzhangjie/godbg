@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
-	cobraprompt "github.com/stromland/cobra-prompt"
+
+	"github.com/hitzhangjie/godbg/pkg/target"
+	//cobraprompt "github.com/stromland/cobra-prompt"
 )
 
 var listCmd = &cobra.Command{
@@ -16,8 +17,9 @@ var listCmd = &cobra.Command{
 	Short:   "查看源码信息",
 	Aliases: []string{"l"},
 	Annotations: map[string]string{
-		cmdGroupAnnotation:              cmdGroupSource,
-		cobraprompt.CALLBACK_ANNOTATION: suggestionListSourceFiles,
+		cmdGroupAnnotation: cmdGroupSource,
+		//Deprecated: this annotation enabled dynamic suggestions in cobraprompt
+		//cobraprompt.CALLBACK_ANNOTATION: suggestionListSourceFiles,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var (
