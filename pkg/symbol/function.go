@@ -2,7 +2,6 @@ package symbol
 
 import (
 	"debug/dwarf"
-	"fmt"
 )
 
 // Function function
