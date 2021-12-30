@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
 )
 
 func TestLoclist5(t *testing.T) {

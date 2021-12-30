@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	seqNo = atomic.NewUint64(0)
+	bpSeqNo = atomic.NewUint64(0)
 )
 
 // Breakpoint 断点信息
@@ -18,21 +18,25 @@ type Breakpoint struct {
 	Enabled bool    // 断点是否启用
 }
 
+// 在指令地址addr处创建一个断点，该地址处原始的1字节数据为orig，源码位置为location
 func newBreakPoint(addr uintptr, orig byte, location string) *Breakpoint {
 	return &Breakpoint{
-		ID:   seqNo.Add(1),
+		ID:   bpSeqNo.Add(1),
 		Addr: addr,
 		Orig: orig,
 		Pos:  location,
 	}
 }
 
+// Breakpoints 所有的断点信息
 type Breakpoints []*Breakpoint
 
+// Len 返回长度
 func (b Breakpoints) Len() int {
 	return len(b)
 }
 
+// Less 检查b[i]是否小于b[j]
 func (b Breakpoints) Less(i, j int) bool {
 	if b[i].ID <= b[j].ID {
 		return true
@@ -40,6 +44,7 @@ func (b Breakpoints) Less(i, j int) bool {
 	return false
 }
 
+// Swap 交换b[i]和b[j]
 func (b Breakpoints) Swap(i, j int) {
 	b[i], b[j] = b[j], b[i]
 }

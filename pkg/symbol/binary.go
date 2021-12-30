@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/frame"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/godwarf"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/reader"
 	"golang.org/x/arch/x86/x86asm"
+
+	"github.com/hitzhangjie/godbg/internal/dwarf/frame"
+	"github.com/hitzhangjie/godbg/internal/dwarf/godwarf"
+	"github.com/hitzhangjie/godbg/internal/dwarf/reader"
 )
 
 // BinaryInfo binary info
@@ -33,7 +34,7 @@ type BinaryInfo struct {
 	curFunction    *Function
 }
 
-// Analyze Analyze executable `execFile` and return the binary info
+// Analyze analyzes executable `execFile` and return the binary info
 func Analyze(execFile string) (*BinaryInfo, error) {
 
 	file, err := elf.Open(execFile)

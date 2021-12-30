@@ -60,7 +60,7 @@ func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 				f.external = val
 			}
 		default:
-			fmt.Printf("analyze:TagSubprogram unknow attr field: %s", field)
+			fmt.Printf("analyze:TagSubprogram unknown attr field: %s", field.Attr.String())
 		}
 	}
 

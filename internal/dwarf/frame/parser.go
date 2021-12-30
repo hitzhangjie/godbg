@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
 )
 
 type parsefunc func(*parseContext) parsefunc

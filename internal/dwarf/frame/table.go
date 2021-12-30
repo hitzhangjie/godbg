@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
 )
 
 // This file contains code about how to build the Call Frame Information Table.
@@ -66,8 +66,8 @@ const (
 
 // DWRule wrapper of rule defined for register values.
 type DWRule struct {
-	Rule       Rule
-	Offset     int64
+	Rule   Rule
+	Offset int64
 	Reg        uint64
 	Expression []byte
 }
@@ -143,14 +143,14 @@ var fnlookup = map[byte]instruction{
 type FrameContext struct {
 	loc           uint64
 	order         binary.ByteOrder
-	address       uint64
-	CFA           DWRule
-	Regs          map[uint64]DWRule
-	initialRegs   map[uint64]DWRule
-	prevRegs      map[uint64]DWRule
-	buf           *bytes.Buffer
-	cie           *CommonInformationEntry
-	RetAddrReg    uint64
+	address     uint64
+	CFA         DWRule
+	Regs        map[uint64]DWRule
+	initialRegs map[uint64]DWRule
+	prevRegs    map[uint64]DWRule
+	buf         *bytes.Buffer
+	cie         *CommonInformationEntry
+	RetAddrReg  uint64
 	codeAlignment uint64
 	dataAlignment int64
 

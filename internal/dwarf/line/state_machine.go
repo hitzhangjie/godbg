@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
 )
 
 type Location struct {

@@ -21,12 +21,13 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/frame"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
-	"github.com/hitzhangjie/godbg/pkg/symbol"
 	"golang.org/x/arch/x86/x86asm"
 	"golang.org/x/sys/unix"
+
+	frame2 "github.com/hitzhangjie/godbg/internal/dwarf/frame"
+	"github.com/hitzhangjie/godbg/internal/dwarf/op"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
+	"github.com/hitzhangjie/godbg/pkg/symbol"
 )
 
 var DBPProcess *DebuggedProcess
@@ -1174,7 +1175,7 @@ func (t *DebuggedProcess) PrintVariable(variable string) error {
 		pc--
 	}
 
-	var fde *frame.FrameDescriptionEntry
+	var fde *frame2.FrameDescriptionEntry
 	if fde, err = t.BInfo.PCToFDE(pc); err != nil {
 		return err
 	}
@@ -1188,7 +1189,7 @@ func (t *DebuggedProcess) PrintVariable(variable string) error {
 	frameBaseRegister := fde.Begin()
 
 	switch framectx.CFA.Rule {
-	case frame.RuleCFA:
+	case frame2.RuleCFA:
 		reg := framectx.CFA.Reg
 		if reg >= 17 {
 			return errors.New("invalid cfa register")

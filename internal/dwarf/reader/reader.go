@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/godwarf"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
+	"github.com/hitzhangjie/godbg/internal/dwarf/godwarf"
+	op2 "github.com/hitzhangjie/godbg/internal/dwarf/op"
 )
 
 type Reader struct {
@@ -43,7 +43,7 @@ func (reader *Reader) AddrFor(name string, staticBase uint64, ptrSize int) (uint
 	if !ok {
 		return 0, fmt.Errorf("type assertion failed")
 	}
-	addr, _, err := op.ExecuteStackProgram(op.DwarfRegisters{StaticBase: staticBase}, instructions, ptrSize)
+	addr, _, err := op2.ExecuteStackProgram(op2.DwarfRegisters{StaticBase: staticBase}, instructions, ptrSize)
 	if err != nil {
 		return 0, err
 	}
@@ -70,7 +70,7 @@ func (reader *Reader) AddrForMember(member string, initialInstructions []byte, p
 		if !ok {
 			continue
 		}
-		addr, _, err := op.ExecuteStackProgram(op.DwarfRegisters{}, append(initialInstructions, instructions...), ptrSize)
+		addr, _, err := op2.ExecuteStackProgram(op2.DwarfRegisters{}, append(initialInstructions, instructions...), ptrSize)
 		return uint64(addr), err
 	}
 }

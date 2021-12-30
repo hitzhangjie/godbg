@@ -16,8 +16,8 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/hitzhangjie/godbg/pkg/dwarf/op"
-	"github.com/hitzhangjie/godbg/pkg/dwarf/util"
+	op2 "github.com/hitzhangjie/godbg/internal/dwarf/op"
+	"github.com/hitzhangjie/godbg/internal/dwarf/util"
 )
 
 const (
@@ -821,17 +821,17 @@ func readType(d *dwarf.Data, name string, r *dwarf.Reader, off dwarf.Offset, typ
 						break
 					}
 					b := util.NewBuf(d, "location", 0, loc)
-					op_ := op.Opcode(b.Uint8())
+					op_ := op2.Opcode(b.Uint8())
 					switch op_ {
-					case op.DW_OP_plus_uconst:
+					case op2.DW_OP_plus_uconst:
 						// Handle opcode sequence [DW_OP_plus_uconst <uleb128>]
 						f.ByteOffset = int64(b.Uint())
 						b.AssertEmpty()
-					case op.DW_OP_consts:
+					case op2.DW_OP_consts:
 						// Handle opcode sequence [DW_OP_consts <sleb128> DW_OP_plus]
 						f.ByteOffset = b.Int()
-						op_ = op.Opcode(b.Uint8())
-						if op_ != op.DW_OP_plus {
+						op_ = op2.Opcode(b.Uint8())
+						if op_ != op2.DW_OP_plus {
 							err = dwarf.DecodeError{Name: name, Offset: kid.Offset, Err: fmt.Sprintf("unexpected opcode 0x%x", op_)}
 							goto Error
 						}
