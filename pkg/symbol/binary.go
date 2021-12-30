@@ -36,14 +36,13 @@ type BinaryInfo struct {
 
 // Analyze analyzes executable `execFile` and return the binary info
 func Analyze(execFile string) (*BinaryInfo, error) {
-
 	file, err := elf.Open(execFile)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	// check info and frame section
+	// check info and line section
 	_, err = godwarf.GetDebugSection(file, "info")
 	if err != nil {
 		return nil, err
@@ -80,7 +79,6 @@ func Analyze(execFile string) (*BinaryInfo, error) {
 //
 // unit entries: see DWARF v4 chapter 3.3.1 normal and partial compilation unit entries
 func (bi *BinaryInfo) ParseLineAndInfo(dwarfData *dwarf.Data) error {
-
 	reader := reader.New(dwarfData)
 	for {
 		entry, err := reader.Next()
@@ -292,7 +290,6 @@ func (bi *BinaryInfo) getSingleMemInst(pid int, pc uint64) (x86asm.Inst, error) 
 }
 
 func (bi *BinaryInfo) Dump() {
-
 	// debug source log
 	for file, mp := range bi.Sources {
 		for line, lineEntryArray := range mp {
