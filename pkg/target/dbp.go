@@ -357,18 +357,19 @@ func (t *DebuggedProcess) updateThreadList() error {
 		}
 
 		// wait thread
-		_, status, err := t.wait(tid, syscall.WALL|syscall.WNOHANG)
+		_, status, err := t.wait(tid, syscall.WNOHANG|syscall.WALL)
 		if err != nil {
 			return fmt.Errorf("wait err: %v", err)
 		}
 		if status.Exited() {
 			fmt.Printf("thread:%d already exited\n", tid)
+			continue
 		}
 
 		// update thread
 		err = syscall.PtraceSetOptions(tid, syscall.PTRACE_O_TRACECLONE)
 		if err != nil {
-			return fmt.Errorf("set PTRACE_O_TRACECLONE err: %v", err)
+			return fmt.Errorf("ptrace tid:%d, PTRACE_O_TRACECLONE err: %v", tid, err)
 		}
 
 		t.Threads[tid] = &Thread{
