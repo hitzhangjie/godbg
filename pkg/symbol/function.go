@@ -30,7 +30,6 @@ func (f *Function) Variables() []*dwarf.Entry {
 }
 
 func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
-
 	fields := curEntry.Field
 
 	for _, field := range fields {
@@ -60,7 +59,7 @@ func (f *Function) parseFrom(curEntry *dwarf.Entry) error {
 				f.external = val
 			}
 		default:
-			fmt.Printf("analyze:TagSubprogram unknown attr field: %s", field.Attr.String())
+			// 其他未处理的属性
 		}
 	}
 
