@@ -158,9 +158,11 @@ func AttachTargetProcess(pid int) (p *DebuggedProcess, err error) {
 	}
 
 	// attach to running process (thread)
-	if err := p.ExecPtrace(func() error { return p.attach(pid) }); err != nil {
+	if err := p.attach(pid); err != nil {
 		return nil, err
 	}
+
+	// Go program has multi threads. To trace the go process, all underlying threads must be traced.
 
 	// initialize DWARF, /proc/pid/comm, /proc/pid/cmdline
 	if err := p.initialize(); err != nil {
@@ -186,10 +188,7 @@ func (p *DebuggedProcess) initialize() error {
 	}
 
 	// attach to other threads, and prepare to trace newly created thread
-	if err := p.ExecPtrace(func() error { return p.updateThreadList() }); err != nil {
-		return err
-	}
-	return nil
+	return p.updateThreadList()
 }
 
 // launchCommand execute `execName` with `args`
@@ -285,7 +284,7 @@ func (p *DebuggedProcess) attach(pid int) error {
 	}
 
 	// attach
-	err := syscall.PtraceAttach(pid)
+	err := p.ExecPtrace(func() error { return syscall.PtraceAttach(pid) })
 	if err != nil {
 		return fmt.Errorf("process %d attached error: %v\n", pid, err)
 	}
@@ -342,12 +341,12 @@ func (p *DebuggedProcess) updateThreadList() error {
 	}
 
 	for _, tid := range tids {
-		fmt.Printf("try to add thread %d to process %d\n", tid, p.Process.Pid)
+		//fmt.Printf("try to add thread %d to process %d\n", tid, p.Process.Pid)
 		_, err := p.addThread(tid, tid != p.Process.Pid)
 		if err != nil {
 			return fmt.Errorf("add thread err: %v", err)
 		}
-		fmt.Printf("add thread %d ok\n", tid)
+		//fmt.Printf("add thread %d ok\n", tid)
 	}
 	return nil
 }
@@ -373,7 +372,6 @@ func checkPid(pid int) bool {
 	if string(out) != "" {
 		return false
 	}
-
 	return true
 }
 
@@ -546,16 +544,13 @@ func (p *DebuggedProcess) ContinueX() error {
 			return fmt.Errorf("could not get event message: %s", err)
 		}
 
-		err = p.ExecPtrace(func() error {
-			return syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE)
-		})
+		err = p.ExecPtrace(func() error { return syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE) })
 		if err != nil {
 			return err
 		}
 
 		p.Threads[int(cloned)] = &Thread{
 			Tid:     int(cloned),
-			Status:  *status,
 			Process: p,
 		}
 	}
@@ -1119,9 +1114,9 @@ func (p *DebuggedProcess) addThread(tid int, attach bool) (*Thread, error) {
 	err := p.ExecPtrace(func() error {
 		return syscall.PtraceSetOptions(tid, syscall.PTRACE_O_TRACECLONE)
 	})
-	var status *syscall.WaitStatus
+
 	if err == syscall.ESRCH {
-		if _, status, err = p.waitFast(tid); err != nil {
+		if _, _, err := p.waitFast(tid); err != nil {
 			return nil, fmt.Errorf("error while waiting after adding thread: %d %s", tid, err)
 		}
 		err := p.ExecPtrace(func() error {
@@ -1138,7 +1133,6 @@ func (p *DebuggedProcess) addThread(tid int, attach bool) (*Thread, error) {
 	p.Threads[tid] = &Thread{
 		Tid:     tid,
 		Process: p,
-		Status:  *status,
 	}
 	return p.Threads[tid], nil
 }
