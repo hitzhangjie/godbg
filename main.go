@@ -30,7 +30,6 @@ func main() {
 }
 
 func processSignals() {
-
 	ch := make(chan os.Signal, 16)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGURG)
 
