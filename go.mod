@@ -12,5 +12,5 @@ require (
 	github.com/stretchr/testify v1.3.0
 	go.uber.org/atomic v1.7.0
 	golang.org/x/arch v0.0.0-20201008161808-52c3e6f60cff
-	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff
+	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff // indirect
 )

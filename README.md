@@ -51,6 +51,8 @@ go-prompt是一个不错的交互输入管理框架，能够支持比较好的�
 
 容器启动之后会自动将当前工程目录作为容器内的工作目录，我们可以在这里进行编译、测试等相关的操作。同时镜像中也已经配置好了常用的工具链（vim、go、dlv等），也方便我们对代码进行修改、编译测试、调试等操作。
 
+ps: 项目也提供了 `.devcontainer+dockerfile`，如果您使用 vscode 进行开发，那么也可以直接选择 `reopen in devcontainer`。
+
 ## 联系方式
 
 如果您有任何建议，请提Issues，或邮件联系 hit.zhangjie@gmail.com，标题中注明来意GoDebugger交流。
