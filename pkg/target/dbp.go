@@ -197,11 +197,12 @@ func (p *DebuggedProcess) initialize() error {
 // 通过设置该选项可以使得tracer自动跟踪新创建线程。
 //
 // PTRACE_O_TRACECLONE (since Linux 2.5.46)
-//                     Stop the tracee at the next clone(2) and
-//                     automatically start tracing the newly cloned
-//                     process, which will start with a SIGSTOP, or
-//                     PTRACE_EVENT_STOP if PTRACE_SEIZE was used.  A
-//                     waitpid(2) by the tracer will return a status value.
+//
+//	Stop the tracee at the next clone(2) and
+//	automatically start tracing the newly cloned
+//	process, which will start with a SIGSTOP, or
+//	PTRACE_EVENT_STOP if PTRACE_SEIZE was used.  A
+//	waitpid(2) by the tracer will return a status value.
 //
 // see more info by `man 2 ptrace`.
 func (p *DebuggedProcess) launchCommand(execName string, args ...string) (*os.Process, error) {
@@ -803,9 +804,14 @@ func (p *DebuggedProcess) Disassemble(addr, max uint64, syntax string) error {
 	offset := uint64(0)
 	count := uint64(0)
 
-	for count < max {
+	for count < max && int(offset) < n {
 		inst, err := x86asm.Decode(dat[offset:], 64)
 		if err != nil {
+			if err == x86asm.ErrUnrecognized {
+				fmt.Printf("unregonized instruction, [%0x] == %0x\n", offset, dat[offset])
+				offset++
+				continue
+			}
 			return fmt.Errorf("x86asm decode error: %v", err)
 		}
 

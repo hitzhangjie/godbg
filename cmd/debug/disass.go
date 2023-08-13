@@ -8,7 +8,7 @@ import (
 )
 
 var disassCmd = &cobra.Command{
-	Use:   "disass [address>",
+	Use:   "disass [address]",
 	Short: "反汇编机器指令",
 	Annotations: map[string]string{
 		cmdGroupAnnotation: cmdGroupSource,
