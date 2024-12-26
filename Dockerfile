@@ -1,4 +1,10 @@
-FROM hitzhangjie/linux101:go1.19
+FROM hitzhangjie/debugger101:latest
+
+#vscode doesn't support old OS and gopls extensions, 
+#so use debugger101:latest (centos stream9+go1.22.4)
+# to replace linux101:go1.19.
+#
+#FROM hitzhangjie/linux101:go1.19"
 
 USER root
 
