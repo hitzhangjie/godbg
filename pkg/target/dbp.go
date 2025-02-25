@@ -147,11 +147,12 @@ func AttachTargetProcess(pid int) (p *DebuggedProcess, err error) {
 		reqCh:  make(chan ptraceRequest, 16),
 		doneCh: make(chan int),
 	}
-	defer func() {
-		if err != nil {
-			p.StopPtrace()
-		}
-	}()
+	// 在当前函数成功执行并返回p之前，不会有人调用其他ptrace操作，所以此时不需要p.StopPtrace
+	// defer func() {
+	// 	if err != nil {
+	// 		p.StopPtrace()
+	// 	}
+	// }()
 
 	if p.Process, err = os.FindProcess(pid); err != nil {
 		return nil, err
