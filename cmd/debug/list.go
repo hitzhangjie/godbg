@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/hitzhangjie/godbg/pkg/target"
-	//cobraprompt "github.com/stromland/cobra-prompt"
 )
 
 var listCmd = &cobra.Command{

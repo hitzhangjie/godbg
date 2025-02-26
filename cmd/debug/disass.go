@@ -2,6 +2,7 @@ package debug
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
@@ -25,6 +26,13 @@ var disassCmd = &cobra.Command{
 			return err
 		}
 		addr := regs.PC()
+
+		if len(args) == 1 {
+			addr, err = strconv.ParseUint(args[0], 16, 64)
+			if err != nil {
+				return fmt.Errorf("parse address err: %v", err)
+			}
+		}
 
 		// 检测addr处是否为断点
 		buf := make([]byte, 1)
