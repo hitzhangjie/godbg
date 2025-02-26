@@ -2,7 +2,6 @@ package debug
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/hitzhangjie/godbg/pkg/target"
 	"github.com/spf13/cobra"
@@ -28,7 +27,7 @@ var disassCmd = &cobra.Command{
 		addr := regs.PC()
 
 		if len(args) == 1 {
-			addr, err = strconv.ParseUint(args[0], 16, 64)
+			addr, err = parseAddress(args[0])
 			if err != nil {
 				return fmt.Errorf("parse address err: %v", err)
 			}
