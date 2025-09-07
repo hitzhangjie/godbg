@@ -52,6 +52,6 @@ func Cleanup() {
 			return
 		}
 	default:
-		fmt.Println("what the fuck")
+		fmt.Fprintf(os.Stderr, "unknown target kind: %d\n", dbp.Kind)
 	}
 }
