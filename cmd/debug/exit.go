@@ -30,6 +30,13 @@ func Cleanup() {
 		dbp = target.DBPProcess
 		err error
 	)
+
+	// 先清理掉之前创建的断点
+	fmt.Fprintf(os.Stdout, "before detached, clearall created breakpoints.")
+	if err := target.DBPProcess.ClearAll(); err != nil {
+		fmt.Fprintf(os.Stderr, "clearall failed err: %v\n", err)
+	}
+
 	// 根据被调试进程创建的方式，debug、exec or attach，来决定如何做善后处理
 	// - debug: kill traced process, delete generated binary
 	// - exec: kill traced process
@@ -59,6 +66,6 @@ func Cleanup() {
 			return
 		}
 	default:
-		fmt.Fprintf(os.Stdout, "tracee is an attached process, leave it running: %d\n", dbp.Kind)
+		fmt.Fprintf(os.Stdout, "tracee is an attached process, leave it running")
 	}
 }

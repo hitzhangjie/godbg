@@ -409,7 +409,16 @@ func (p *DebuggedProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
 
 // ClearAll 删除所有已添加的断点
 func (p *DebuggedProcess) ClearAll() error {
-	return nil
+	err := p.ExecPtrace(func() error {
+		for _, b := range p.Breakpoints {
+			_, err := p.ClearBreakpoint(b.Addr)
+			if err != nil {
+				return fmt.Errorf("clear breakpoint %d, err: %v", b.Addr, err)
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 func (p *DebuggedProcess) Continue() error {
