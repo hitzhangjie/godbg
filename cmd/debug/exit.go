@@ -41,17 +41,24 @@ func Cleanup() {
 
 	switch dbp.Kind {
 	case target.DEBUG:
+		fmt.Fprintf(os.Stdout, "tracee is is built and run by tracer, remove binary and kill it: %d\n", dbp.Kind)
+
 		if err = os.RemoveAll(dbp.Command); err != nil {
 			fmt.Fprintf(os.Stderr, "remove built binary %s, err: %v\n", dbp.Command, err)
 			return
 		}
+		if err = syscall.Kill(dbp.Process.Pid, syscall.SIGKILL); err != nil {
+			fmt.Fprintf(os.Stderr, "kill tracee: %d, err: %v\n", dbp.Process.Pid, err)
+			return
+		}
 		fallthrough
 	case target.EXEC:
+		fmt.Fprintf(os.Stdout, "tracee is is run by tracer, kill it: %d\n", dbp.Kind)
 		if err = syscall.Kill(dbp.Process.Pid, syscall.SIGKILL); err != nil {
 			fmt.Fprintf(os.Stderr, "kill tracee: %d, err: %v\n", dbp.Process.Pid, err)
 			return
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "unknown target kind: %d\n", dbp.Kind)
+		fmt.Fprintf(os.Stdout, "tracee is an attached process, leave it running: %d\n", dbp.Kind)
 	}
 }
