@@ -3,7 +3,6 @@ package target
 import (
 	"bufio"
 	"bytes"
-	"debug/dwarf"
 	"debug/elf"
 	"debug/gosym"
 	"encoding/binary"
@@ -19,14 +18,8 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
-	"unsafe"
 
 	"golang.org/x/arch/x86/x86asm"
-
-	frame2 "github.com/hitzhangjie/godbg/internal/dwarf/frame"
-	"github.com/hitzhangjie/godbg/internal/dwarf/op"
-	"github.com/hitzhangjie/godbg/internal/dwarf/util"
-	"github.com/hitzhangjie/godbg/pkg/symbol"
 )
 
 var DBPProcess *DebuggedProcess
@@ -40,7 +33,7 @@ type DebuggedProcess struct {
 	Args    []string // 进程启动参数，方便重启调试
 	Kind    Kind     // 发起调试的类型
 
-	BInfo *symbol.BinaryInfo // 符号层操作
+	// BInfo *symbol.BinaryInfo // 符号层操作
 
 	Breakpoints map[uintptr]*Breakpoint // 已经添加的断点
 
@@ -80,55 +73,11 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 		}
 
 		// trace newly created thread
-		//
-		// 以testdata/loop2.go为例，func init中启动的goroutine可能和main函数所在的main goroutine由不同线程执行，
-		// 此时，虽然main函数中虽然可以正常添加断点、并continue到此位置。但是func init中协程却不断输出信息，干扰调试。
-		//
-		// 有没有办法，控制住该func init中协程的执行呢？有，就是要能够提前trace新创建的线程，对tracee添加下面的选项
-		// PTRACE_O_TRACECLONE，就可以让新clone出的线程自动被trace！
-		//
-		//```
-		//package main
-		//func init() {
-		//	go func() {
-		//		for {
-		//			fmt.Println("main.func1 pid:", os.Getpid())
-		//			time.Sleep(time.Second)
-		//		}
-		//	}()
-		//}
-		//func main() {
-		//	pid := os.Getpid()
-		//	for {
-		//		fmt.Println("main.main pid:", pid)
-		//		time.Sleep(time.Second * 3)
-		//	}
-		//}
-		//```
-		//
-		// 添加了此选项之后，就可以正常trace新clone出来的线程，此时所有线程处于trace状态，tracer一样会收到通知（当然需要wait）
-		// 假定现在创建了线程t用来执行func init()中goroutine，我们在main.main中添加了断点，此时还没有执行到断点，
-		// 当我们希望执行到断点位置时，执行PTRACE_CONT操作：
-		// - 此时线程继续执行，但是执行的是不是main goroutine就不一定了，main.main一定是在main goroutine中执行的，
-		//   所以该线程中途有可能会莫名其妙地停下来，但是不是我们希望的位置，但是只要它能正常执行，过段时间总会在合适的位置停下来；
-		// - 为了更清晰地支持上述切换，delve提供了threads/thread来查看、切换线程，goroutines/goroutine来查看、切换goroutine；
-		//
-		// 但是要注意，如果添加了这个选项之后，所有thread被trace，然后我们执行continue操作，实际上最终你不能确定main.main由哪一个
-		// thread来执行，因此在当前线程上重复执行continue也不一定能达到预想的效果，需要怎么做呢？对所有线程执行PTRACE_CONT操作：
-		// - 对于新clone的线程，要有办法感知到它的存在；
-		//
 		return syscall.PtraceSetOptions(target.Process.Pid, syscall.PTRACE_O_TRACECLONE)
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	// load binary ifo
-	bi, err := symbol.Analyze(cmd)
-	if err != nil {
-		return nil, err
-	}
-	target.BInfo = bi
 
 	return &target, nil
 }
@@ -173,12 +122,7 @@ func AttachTargetProcess(pid int) (p *DebuggedProcess, err error) {
 }
 
 func (p *DebuggedProcess) initialize() error {
-	exec := fmt.Sprintf("/proc/%d/exe", p.Process.Pid)
-	bi, err := symbol.Analyze(exec)
-	if err != nil {
-		return err
-	}
-	p.BInfo = bi
+	var err error
 
 	// initialize the command and arguments, after then, we could support restart command.
 	if p.Command, err = readProcComm(p.Process.Pid); err != nil {
@@ -404,9 +348,6 @@ func (p *DebuggedProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
 		breakpoint *Breakpoint
 		err        error
 		n          int
-
-		file string
-		line int
 	)
 
 	err = p.ExecPtrace(func() error {
@@ -418,10 +359,8 @@ func (p *DebuggedProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
 			return fmt.Errorf("peek text, pid: %d, %d bytes, error: %v", pid, n, err)
 		}
 
-		file, line, err = p.BInfo.PCToFileLine(uint64(addr))
-		if err != nil {
-			return err
-		}
+		file := "unknown"
+		line := 0
 
 		breakpoint = newBreakPoint(addr, orig[0], fmt.Sprintf("%s:%d", file, line))
 		p.Breakpoints[addr] = breakpoint
@@ -557,193 +496,6 @@ func (p *DebuggedProcess) ContinueX() error {
 		}
 	}
 	return err
-}
-
-// Deprecated too slow
-func (p *DebuggedProcess) Next() error {
-	var (
-		loop = true
-
-		origFile   string
-		origLineNo int
-
-		newFile   string
-		newLineNo int
-	)
-
-	// 获取当前行位置
-	regs, err := p.ReadRegister()
-	if err != nil {
-		return err
-	}
-
-	if ok := p.IsBreakpoint(uintptr(regs.PC() - 1)); !ok {
-		origFile, origLineNo, err = p.BInfo.PCToFileLine(regs.PC())
-	} else {
-		origFile, origLineNo, err = p.BInfo.PCToFileLine(regs.PC() - 1)
-	}
-	if err != nil {
-		return err
-	}
-
-	//calling := false
-	//callingRet := uint64(0)
-
-	for loop {
-		regs, err := p.ReadRegister()
-		if err != nil {
-			return err
-		}
-
-		pc := regs.PC()
-
-		if ok := p.IsBreakpoint(uintptr(pc - 1)); ok {
-			brk, err := p.ClearBreakpoint(uintptr(pc - 1))
-			if err != nil {
-				return err
-			}
-			defer p.AddBreakpoint(brk.Addr)
-
-			pc--
-			regs.SetPC(pc)
-			err = p.WriteRegister(regs)
-			if err != nil {
-				return err
-			}
-		}
-
-		//inst, err := t.DisassembleSingleInstruction(pc)
-		//if err != nil {
-		//	return err
-		//}
-
-		// call指令，不用跳过去逐指令执行
-		//if inst.Op == x86asm.CALL || inst.Op == x86asm.LCALL {
-		//	calling = true
-		//	callingRet = pc + uint64(inst.Len)
-		//	continue
-		//}
-
-		_, err = p.SingleStep()
-		if err != nil {
-			return err
-		}
-
-		regs, err = p.ReadRegister()
-		if err != nil {
-			return err
-		}
-
-		newFile, newLineNo, err = p.BInfo.PCToFileLine(regs.PC())
-		if err != nil {
-			return err
-		}
-		if !(newFile == origFile && newLineNo == origLineNo) {
-			break
-		}
-		fmt.Printf("continue at %s:%d, pc: %#x\n", newFile, newLineNo, regs.PC())
-	}
-
-	fmt.Printf("stopped at %s:%d, pc: %#x\n", newFile, newLineNo, regs.PC())
-	return nil
-}
-
-func (p *DebuggedProcess) NextX() error {
-	var (
-		err         error
-		ok          bool
-		filename    string
-		lineno      int
-		oldfilename string
-		oldlineno   int
-		inst        *x86asm.Inst
-	)
-
-	regs, err := p.ReadRegister()
-	if err != nil {
-		return err
-	}
-	pc := regs.PC()
-
-	if ok = p.IsBreakpoint(uintptr(pc - 1)); ok {
-		pc--
-		regs.SetPC(pc)
-		if err = p.WriteRegister(regs); err != nil {
-			return err
-		}
-		if brk, err := p.ClearBreakpoint(uintptr(pc - 1)); err != nil {
-			return err
-		} else {
-			defer p.AddBreakpoint(brk.Addr)
-		}
-	}
-
-	if oldfilename, oldlineno, err = p.BInfo.PCToFileLine(pc); err != nil {
-		return err
-	}
-
-	calling := false
-	callingfpc := uint64(0)
-
-	for {
-		regs, err := p.ReadRegister()
-		if err != nil {
-			return err
-		}
-		pc := regs.PC()
-
-		if ok := p.IsBreakpoint(uintptr(pc - 1)); ok {
-			descLoc(p, pc-1)
-		}
-
-		if calling == true && pc != callingfpc {
-			if _, err = p.SingleStep(); err != nil {
-				return err
-			}
-		} else if calling == true && pc == callingfpc {
-			calling = false
-			if filename, lineno, err = p.BInfo.PCToFileLine(pc); err != nil {
-				return err
-			}
-			if !(filename == oldfilename && lineno == oldlineno) {
-				descLoc(p, pc-1)
-				return nil
-			}
-		} else {
-			if inst, err = p.DisassembleSingleInstruction(pc); err != nil {
-				return err
-			}
-			if inst.Op == x86asm.CALL || inst.Op == x86asm.LCALL {
-				calling = true
-				callingfpc = pc + uint64(inst.Len)
-				continue
-			}
-
-			if _, err = p.SingleStep(); err != nil {
-				return err
-			}
-			if filename, lineno, err = p.BInfo.PCToFileLine(pc + uint64(inst.Len)); err != nil {
-				return err
-			}
-			if !(filename == oldfilename && lineno == oldlineno) {
-				descLoc(p, pc)
-				return nil
-			}
-		}
-	}
-}
-
-func descLoc(t *DebuggedProcess, pc uint64) error {
-
-	file, lineno, err := t.BInfo.PCToFileLine(pc - 1)
-	if err != nil {
-		return err
-	}
-
-	fn, err := t.BInfo.PCToFunction(pc - 1)
-
-	fmt.Printf("stopped at %s:%d, addr: %#x\n", file, lineno, fn.Name())
-	return nil
 }
 
 // SingleStep 执行一条指令
@@ -979,83 +731,6 @@ func (p *DebuggedProcess) Backtrace() error {
 	return nil
 }
 
-// BacktraceX 获取调用栈信息
-//
-// use .(z)debug_line to build the mappings btw PC and fileLineNo,
-// use regs.BP() to read the caller's BP and return address,
-// then we could build the backtrace.
-func (p *DebuggedProcess) BacktraceX() error {
-
-	// 获取当前寄存器状态
-	regs, err := p.ReadRegister()
-	if err != nil {
-		return err
-	}
-
-	// print stack trace
-	idx := 0
-	desc, err := p.frameInfo(regs.PC() - 1)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("#%d %s\n", idx, desc)
-
-	bp := regs.Rbp
-	ret := uint64(0)
-
-	idx++
-	for {
-		if bp == 0 {
-			break
-		}
-
-		//addr := rbp
-		buf := make([]byte, 16)
-
-		n, err := p.ReadMemory(uintptr(bp), buf)
-		if err != nil || n != 16 {
-			return fmt.Errorf("read mermory err: %v, bytes: %d", err, n)
-		}
-
-		// bp of previous caller stackframe
-		reader := bytes.NewBuffer(buf)
-		err = binary.Read(reader, binary.LittleEndian, &bp)
-		if err != nil {
-			return err
-		}
-
-		// ret address
-		err = binary.Read(reader, binary.LittleEndian, &ret)
-		if err != nil {
-			return err
-		}
-
-		// TODO：暂时不考虑内联、尾递归优化（go编译器暂时不支持尾递归优化）的话，ret基本上对应着调用方函数的栈帧，
-		// 但是为了让源代码位置更精准，这里的减去对ret减1
-		desc, err = p.frameInfo(ret - 1)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("#%d %s\n", idx, desc)
-	}
-	return nil
-}
-
-func (p *DebuggedProcess) frameInfo(pc uint64) (string, error) {
-	f, n, err := p.BInfo.PCToFileLine(pc)
-	if err != nil {
-		return "", err
-	}
-
-	fn, err := p.BInfo.PCToFunction(pc)
-	if err != nil {
-		return "", err
-	}
-
-	desc := fmt.Sprintf("%s %s:%d", fn.Name(), f, n)
-	return desc, nil
-}
-
 // Frame 返回${idx}th个栈帧的信息
 func (p *DebuggedProcess) Frame(idx int) error {
 	return nil
@@ -1187,123 +862,3 @@ const (
 	personalityGetPersonality = 0xffffffff // argument to pass to personality syscall to get the current personality
 	_ADDR_NO_RANDOMIZE        = 0x0040000  // ADDR_NO_RANDOMIZE linux constant
 )
-
-func (p *DebuggedProcess) PrintVariable(variable string) error {
-	regs, err := p.ReadRegister()
-	if err != nil {
-		return err
-	}
-	pc := regs.PC()
-
-	if ok := p.IsBreakpoint(uintptr(pc - 1)); ok {
-		pc--
-	}
-
-	var fde *frame2.FrameDescriptionEntry
-	if fde, err = p.BInfo.PCToFDE(pc); err != nil {
-		return err
-	}
-	framectx := fde.EstablishFrame(pc)
-
-	framectx.RegsV = make([]uint64, 17)
-	framectx.RegsV[16] = regs.PC()
-	framectx.RegsV[7] = regs.Rsp
-	framectx.RegsV[6] = regs.Rbp
-
-	frameBaseRegister := fde.Begin()
-
-	switch framectx.CFA.Rule {
-	case frame2.RuleCFA:
-		reg := framectx.CFA.Reg
-		if reg >= 17 {
-			return errors.New("invalid cfa register")
-		}
-		fmt.Printf("register: %d\n", reg)
-
-		if framectx.RegsV[framectx.CFA.Reg] == 0 {
-			return errors.New("invalid register value")
-		}
-
-		reg = framectx.RegsV[framectx.CFA.Reg]
-		frameBaseRegister = reg + uint64(framectx.CFA.Offset)
-	}
-
-	var fn *symbol.Function
-	if fn, err = p.BInfo.PCToFunction(pc); err != nil {
-		return err
-	}
-
-	var entry *dwarf.Entry
-
-	for _, fv := range fn.Variables() {
-		field := fv.AttrField(dwarf.AttrName)
-		if field == nil {
-			continue
-		}
-
-		fieldstr, ok := field.Val.(string)
-		if !ok || fieldstr != variable {
-			continue
-		}
-
-		entry = fv
-		break
-	}
-
-	if entry == nil {
-		return errors.New("variable not found")
-	}
-
-	location := entry.AttrField(dwarf.AttrLocation)
-	buf := bytes.NewBuffer(location.Val.([]byte))
-	opcode, err := buf.ReadByte()
-	if err != nil {
-		return err
-	}
-
-	switch opcode {
-	case byte(op.DW_OP_fbreg):
-		offset, _ := util.DecodeSLEB128(buf)
-		address := frameBaseRegister + uint64(offset)
-		fmt.Printf("fde: %#x\n", address)
-
-		// if the type is `string`
-		//
-		// see StringHeader:
-		// https://sourcegraph.com/github.com/golang/go@dbab07983596c705d2ef12806e0f9d630063e571/-/blob/src/reflect/value.go#L1983
-		//
-
-		// ==> read StringHeader.Len
-		val := make([]byte, 8)
-		n, err := p.ReadMemory(uintptr(address)+uintptr(8), val)
-		if err != nil || n != 8 {
-			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
-		}
-		slen := binary.LittleEndian.Uint64(val)
-		fmt.Printf("string address: %#x\n", address)
-		fmt.Printf("bytes: %v\n", val)
-		fmt.Printf("slen: %d\n", slen)
-
-		// ==> read stringHeader.Data
-		n, err = p.ReadMemory(uintptr(address), val)
-		if err != nil || n != 8 {
-			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
-		}
-
-		addr := uintptr(binary.LittleEndian.Uint64(val))
-		if addr == 0 {
-			return fmt.Errorf("pointer addr %d shoulde be == 0", addr)
-		}
-		fmt.Printf("address = %#x,  len = %v, addr = %#x, num = %d\n", address, slen, addr, offset)
-
-		strbuf := make([]byte, slen)
-		n, err = p.ReadMemory(addr, strbuf)
-		if err != nil || int(slen) != n {
-			return fmt.Errorf("read memory err: %v, read bytes: %d", err, n)
-		}
-		fmt.Printf("%ss\n", *(*string)(unsafe.Pointer(&strbuf)))
-		return nil
-	default:
-		return fmt.Errorf("not support dwarf variable, opcode: %v, entry: %#v", opcode, entry)
-	}
-}

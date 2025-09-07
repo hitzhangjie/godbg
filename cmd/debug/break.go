@@ -3,7 +3,6 @@ package debug
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 
 	"github.com/hitzhangjie/godbg/pkg/target"
@@ -46,20 +45,7 @@ var breakCmd = &cobra.Command{
 
 		// try parse as file:lineno
 		{
-			file, lineno, err := parseFileLineno(locStr)
-			if err != nil {
-				return fmt.Errorf("invalid loc: %s", locStr)
-			}
-			file, err = filepath.Abs(file)
-			if err != nil {
-				return err
-			}
-
-			addr, err = target.DBPProcess.BInfo.FileLineToPC(file, lineno)
-			if err != nil {
-				return fmt.Errorf("fileline to pc err: %v", err)
-			}
-			fmt.Printf("add breakpoint %s, addr: %#x\n", locStr, addr)
+			// not supported
 		}
 
 	ADD_BREAKPOINT:
