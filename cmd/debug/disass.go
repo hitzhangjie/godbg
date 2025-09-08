@@ -16,8 +16,9 @@ var disassCmd = &cobra.Command{
 	Aliases: []string{"dis", "disassemble"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var (
-			max, _    = cmd.Flags().GetUint64("max")
-			syntax, _ = cmd.Flags().GetString("syntax")
+			max, _      = cmd.Flags().GetUint64("max")
+			syntax, _   = cmd.Flags().GetString("syntax")
+			clearall, _ = cmd.Flags().GetBool("clearall")
 		)
 		// 读取PC值
 		regs, err := target.DBPProcess.ReadRegister()
@@ -33,35 +34,14 @@ var disassCmd = &cobra.Command{
 			}
 		}
 
-		// 检测addr处是否为断点
-		buf := make([]byte, 1)
-		n, err := target.DBPProcess.ReadMemory(uintptr(addr-1), buf)
-		if err != nil || n != 1 {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+		// 根据选项选择不同的反汇编方式
+		if clearall {
+			// 新逻辑：处理断点
+			return target.DBPProcess.DisassembleWithBreakpointCleared(addr, max, syntax)
+		} else {
+			// 老逻辑：只处理目标地址处的断点，后续的断点不处理
+			return target.DBPProcess.Disassemble(addr, max, syntax)
 		}
-
-		// read a breakpoint
-		if buf[0] == 0xcc {
-			brk, err := target.DBPProcess.ClearBreakpoint(uintptr(addr - 1))
-			if err == target.ErrBreakpointNotExisted {
-				// this 0xcc is not patched by debugger, decode from `addr`
-				return target.DBPProcess.Disassemble(addr, max, syntax)
-			}
-			if err != nil {
-				// debugger inner error
-				return fmt.Errorf("clear breakpoint err: %v", err)
-			}
-			defer target.DBPProcess.AddBreakpoint(brk.Addr)
-
-			// rewind 1 byte
-			regs.SetPC(regs.PC() - 1)
-			if err = target.DBPProcess.WriteRegister(regs); err != nil {
-				return err
-			}
-		}
-
-		// disassemble instructions
-		return target.DBPProcess.Disassemble(addr, max, syntax)
 	},
 }
 
@@ -70,4 +50,5 @@ func init() {
 
 	disassCmd.Flags().Uint64P("max", "n", 10, "反汇编指令数量")
 	disassCmd.Flags().StringP("syntax", "s", "gnu", "反汇编指令语法，支持：go, gnu, intel")
+	disassCmd.Flags().Bool("clearall", false, "是否在反汇编时排除已有断点影响")
 }

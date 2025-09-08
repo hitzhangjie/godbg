@@ -552,12 +552,26 @@ func (p *DebuggedProcess) DisassembleSingleInstruction(addr uint64) (*x86asm.Ins
 
 // Disassemble 反汇编地址addr处的指令
 func (p *DebuggedProcess) Disassemble(addr, max uint64, syntax string) error {
-
 	// 指令数据
 	dat := make([]byte, 1024)
-	n, err := p.ReadMemory(uintptr(addr), dat)
+	n, err := p.ReadMemory(uintptr(addr-1), dat)
 	if err != nil || n == 0 {
 		return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+	}
+
+	if dat[0] == 0xcc {
+		bp, ok := p.Breakpoints[uintptr(addr-1)]
+		if ok {
+			dat[0] = bp.Orig
+			addr--
+			fmt.Printf("restore breakpoint orig instruction: %#x\n", bp.Orig)
+		} else {
+			dat = dat[1:]
+			n--
+		}
+	} else {
+		dat = dat[1:]
+		n--
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 8, ' ', 0)
@@ -584,6 +598,87 @@ func (p *DebuggedProcess) Disassemble(addr, max uint64, syntax string) error {
 
 		end := offset + uint64(inst.Len)
 		fmt.Fprintf(tw, "%#x:\t% x\t%s\n", addr+offset, dat[offset:end], asm)
+		offset = end
+		count++
+	}
+	tw.Flush()
+
+	return nil
+}
+
+// DisassembleWithBreakpointCleared 智能反汇编，能够处理内存区域中的所有断点
+func (p *DebuggedProcess) DisassembleWithBreakpointCleared(addr, max uint64, syntax string) error {
+	// 读取足够的内存数据用于反汇编
+	dat := make([]byte, 1024)
+	n, err := p.ReadMemory(uintptr(addr-1), dat)
+	if err != nil || n == 0 {
+		return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
+	}
+
+	// 扫描并临时恢复所有断点
+	if dat[0] == 0xcc {
+		bp, ok := p.Breakpoints[uintptr(addr-1)]
+		if ok {
+			dat[0] = bp.Orig
+			fmt.Printf("restore breakpoint orig instruction: %#x\n", bp.Orig)
+			addr--
+		} else {
+			dat = dat[1:]
+			n--
+		}
+	} else {
+		dat = dat[1:]
+		n--
+	}
+	p.restoreOrigInstructionAtBp(addr, dat[:n])
+
+	// 在恢复后的数据上进行反汇编
+	return p.disassembleData(addr, dat[:n], max, syntax)
+}
+
+func (p *DebuggedProcess) restoreOrigInstructionAtBp(startAddr uint64, data []byte) {
+	for i := 0; i < len(data); i++ {
+		if data[i] != 0xcc {
+			continue
+		}
+		// 检查这个0xcc是否是我们的断点
+		addr := uintptr(startAddr + uint64(i))
+		bp, exists := p.Breakpoints[addr]
+		if !exists {
+			continue
+		}
+		// 恢复断点处原指令数据
+		fmt.Printf("restore breakpoint orig instruction: %#x\n", bp.Orig)
+		data[i] = bp.Orig
+	}
+}
+
+// disassembleData 在给定的数据上进行反汇编
+func (p *DebuggedProcess) disassembleData(addr uint64, data []byte, max uint64, syntax string) error {
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 8, ' ', 0)
+
+	// 反汇编这里的指令数据
+	offset := uint64(0)
+	count := uint64(0)
+
+	for count < max && int(offset) < len(data) {
+		inst, err := x86asm.Decode(data[offset:], 64)
+		if err != nil {
+			if err == x86asm.ErrUnrecognized {
+				fmt.Printf("unregonized instruction, [%0x] == %0x\n", offset, data[offset])
+				offset++
+				continue
+			}
+			return fmt.Errorf("x86asm decode error: %v", err)
+		}
+
+		asm, err := instSyntax(inst, syntax)
+		if err != nil {
+			return fmt.Errorf("x86asm syntax error: %v", err)
+		}
+
+		end := offset + uint64(inst.Len)
+		fmt.Fprintf(tw, "%#x:\t% x\t%s\n", addr+offset, data[offset:end], asm)
 		offset = end
 		count++
 	}
@@ -627,7 +722,7 @@ func (p *DebuggedProcess) ReadMemory(addr uintptr, buf []byte) (int, error) {
 	return dat, err
 }
 
-// SetVariable 设置内存地址addr处的值为value
+// WriteMemory 设置内存地址addr处的值为value
 func (p *DebuggedProcess) WriteMemory(addr uintptr, value []byte) error {
 	return nil
 }
