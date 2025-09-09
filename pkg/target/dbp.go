@@ -173,7 +173,7 @@ func (p *DebuggedProcess) launchCommand(execName string, args ...string) (*os.Pr
 	p.Process = progCmd.Process
 
 	// wait target process stopped
-	_, status, err := p.wait(progCmd.Process.Pid, syscall.WALL)
+	_, status, err := p.wait(progCmd.Process.Pid, syscall.WSTOPPED)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (p *DebuggedProcess) attach(pid int) error {
 	fmt.Printf("process %d attached succ\n", pid)
 
 	// wait
-	_, status, err := p.wait(pid, syscall.WALL)
+	_, status, err := p.wait(pid, syscall.WSTOPPED)
 	if err != nil {
 		return fmt.Errorf("process %d waited error: %v\n", pid, err)
 	}
@@ -429,7 +429,7 @@ func (p *DebuggedProcess) Continue() error {
 		return err
 	}
 
-	wpid, status, err := p.wait(p.Process.Pid, syscall.WALL)
+	wpid, status, err := p.wait(p.Process.Pid, syscall.WSTOPPED)
 	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
 	return err
 }
@@ -449,62 +449,6 @@ func descStatus(status *syscall.WaitStatus) string {
 	default:
 		return strconv.Itoa(int(*status))
 	}
-}
-
-// ContinueX 执行到下一个断点处，考虑所有线程的问题
-func (p *DebuggedProcess) ContinueX() error {
-
-	var err error
-	for _, thread := range p.Threads {
-		err := p.ExecPtrace(func() error {
-			// continue
-			return syscall.PtraceCont(thread.Tid, 0)
-		})
-		if err != nil {
-			return fmt.Errorf("continue thread fail: %v", err)
-		}
-
-		// wait, if there's no children threads, return immediately
-		wpid, status, err := p.wait(thread.Tid, 0)
-		if err != nil {
-			return fmt.Errorf("thread: %d wait, err: %v", thread.Tid, err)
-		}
-
-		if wpid == 0 {
-			continue
-		}
-
-		// new cloned thread
-		if !(status.StopSignal() == syscall.SIGTRAP && status.TrapCause() == syscall.PTRACE_EVENT_CLONE) {
-			continue
-		}
-
-		// A traced thread has cloned a new thread, grab the pid and
-		// add it to our list of traced threads.
-		var cloned uint
-		err = p.ExecPtrace(func() error {
-			cloned, err = syscall.PtraceGetEventMsg(wpid)
-			return err
-		})
-		if err != nil {
-			if err == syscall.ESRCH {
-				// thread died while we were adding it
-				continue
-			}
-			return fmt.Errorf("could not get event message: %s", err)
-		}
-
-		err = p.ExecPtrace(func() error { return syscall.PtraceSetOptions(int(cloned), syscall.PTRACE_O_TRACECLONE) })
-		if err != nil {
-			return err
-		}
-
-		p.Threads[int(cloned)] = &Thread{
-			Tid:     int(cloned),
-			Process: p,
-		}
-	}
-	return err
 }
 
 // SingleStep 执行一条指令
