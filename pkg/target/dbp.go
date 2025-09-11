@@ -668,7 +668,17 @@ func (p *DebuggedProcess) ReadMemory(addr uintptr, buf []byte) (int, error) {
 
 // WriteMemory 设置内存地址addr处的值为value
 func (p *DebuggedProcess) WriteMemory(addr uintptr, value []byte) error {
-	return nil
+	return p.ExecPtrace(func() error {
+		// 使用 PtracePokeData 写入内存数据
+		n, err := syscall.PtracePokeData(p.Process.Pid, addr, value)
+		if err != nil {
+			return err
+		}
+		if n != len(value) {
+			return fmt.Errorf("expected to write %d bytes, but wrote %d bytes", len(value), n)
+		}
+		return nil
+	})
 }
 
 // ReadRegister 读取寄存器的数据
