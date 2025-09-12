@@ -423,19 +423,37 @@ func (p *DebuggedProcess) ClearAll() error {
 }
 
 func (p *DebuggedProcess) Continue() error {
-	err := p.ExecPtrace(func() error {
-		err := syscall.PtraceCont(p.Process.Pid, 0)
-		if err == syscall.ESRCH {
-			fmt.Fprintf(os.Stderr, "warn: process %d exited\n", p.Process.Pid)
-			return nil
+	// continue each thread
+	for _, thread := range p.Threads {
+		err := p.ExecPtrace(func() error {
+			err := syscall.PtraceCont(thread.Tid, 0)
+			if err == syscall.ESRCH {
+				fmt.Fprintf(os.Stderr, "warn: thread %d exited\n", thread.Tid)
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("ptrace cont thread %d err: %v", thread.Tid, err)
 		}
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("ptrace cont err: %v", err)
 	}
-
+	// wait any thread stopped
 	wpid, status, err := p.wait(p.Process.Pid, syscall.WSTOPPED)
+	if err != nil {
+		return fmt.Errorf("wait error: %v", err)
+	}
+	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
+	// if any thread stopped, then stop all threads again
+	for _, thread := range p.Threads {
+		err := p.ExecPtrace(func() error {
+			return syscall.PtraceSingleStep(thread.Tid)
+		})
+		if err != nil {
+			return fmt.Errorf("ptrace stop thread %d err: %v", thread.Tid, err)
+		}
+	}
+	// wait any thread stopped
+	wpid, status, err = p.wait(p.Process.Pid, syscall.WSTOPPED)
 	if err != nil {
 		return fmt.Errorf("wait error: %v", err)
 	}
@@ -691,10 +709,9 @@ func (p *DebuggedProcess) WriteMemory(addr uintptr, value []byte) error {
 }
 
 // ReadRegister 读取寄存器的数据
-func (p *DebuggedProcess) ReadRegister() (*syscall.PtraceRegs, error) {
+func (p *DebuggedProcess) ReadRegister(pid int) (*syscall.PtraceRegs, error) {
 	var regs syscall.PtraceRegs
 	err := p.ExecPtrace(func() error {
-		pid := p.Process.Pid
 		return syscall.PtraceGetRegs(pid, &regs)
 	})
 	if err != nil {
@@ -726,7 +743,7 @@ func (p *DebuggedProcess) Backtrace() error {
 	pid := p.Process.Pid
 
 	// 获取当前寄存器状态
-	regs, err := p.ReadRegister()
+	regs, err := p.ReadRegister(pid)
 	if err != nil {
 		return err
 	}

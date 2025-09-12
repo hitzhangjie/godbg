@@ -23,7 +23,7 @@ var stepCmd = &cobra.Command{
 				return
 			}
 			// display current pc
-			regs, err := dbp.ReadRegister()
+			regs, err := dbp.ReadRegister(dbp.Process.Pid)
 			if err != nil {
 				fmt.Printf("get regs error: %v", err)
 				return
@@ -32,7 +32,7 @@ var stepCmd = &cobra.Command{
 		}()
 
 		// 读取PC值
-		regs, err := dbp.ReadRegister()
+		regs, err := dbp.ReadRegister(dbp.Process.Pid)
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}

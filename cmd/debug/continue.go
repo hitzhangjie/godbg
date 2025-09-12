@@ -18,12 +18,13 @@ var continueCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 
 		dbp := target.DBPProcess
+
 		defer func() {
 			if err != nil {
 				return
 			}
 			// display current pc
-			regs, err := target.DBPProcess.ReadRegister()
+			regs, err := dbp.ReadRegister(dbp.Process.Pid)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "get regs error: %v\n", err)
 				return
@@ -32,7 +33,7 @@ var continueCmd = &cobra.Command{
 		}()
 
 		// 读取PC值
-		regs, err := dbp.ReadRegister()
+		regs, err := dbp.ReadRegister(dbp.Process.Pid)
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}

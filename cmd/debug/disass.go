@@ -21,7 +21,8 @@ var disassCmd = &cobra.Command{
 			clearall, _ = cmd.Flags().GetBool("clearall")
 		)
 		// 读取PC值
-		regs, err := target.DBPProcess.ReadRegister()
+		dbp := target.DBPProcess
+		regs, err := dbp.ReadRegister(dbp.Process.Pid)
 		if err != nil {
 			return err
 		}

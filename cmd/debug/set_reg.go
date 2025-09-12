@@ -38,7 +38,8 @@ var setRegCmd = &cobra.Command{
 		}
 
 		// 读取当前寄存器状态
-		regs, err := target.DBPProcess.ReadRegister()
+		dbp := target.DBPProcess
+		regs, err := dbp.ReadRegister(dbp.Process.Pid)
 		if err != nil {
 			return fmt.Errorf("failed to read registers: %v", err)
 		}

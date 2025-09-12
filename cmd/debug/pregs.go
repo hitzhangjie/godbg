@@ -18,7 +18,8 @@ var pregsCmd = &cobra.Command{
 		cmdGroupAnnotation: cmdGroupInfo,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		regs, err := target.DBPProcess.ReadRegister()
+		dbp := target.DBPProcess
+		regs, err := dbp.ReadRegister(dbp.Process.Pid)
 		if err != nil {
 			return fmt.Errorf("get regs error: %v", err)
 		}
