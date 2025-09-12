@@ -203,7 +203,8 @@ func (p *DebuggedProcess) ExecPtrace(fn func() error) error {
 				case req := <-p.reqCh:
 					req.errCh <- req.fn()
 				case <-p.doneCh:
-					break
+					fmt.Println("stop ptrace requests")
+					return
 				}
 			}
 		}()
@@ -423,15 +424,23 @@ func (p *DebuggedProcess) ClearAll() error {
 
 func (p *DebuggedProcess) Continue() error {
 	err := p.ExecPtrace(func() error {
-		return syscall.PtraceCont(p.Process.Pid, 0)
+		err := syscall.PtraceCont(p.Process.Pid, 0)
+		if err == syscall.ESRCH {
+			fmt.Fprintf(os.Stderr, "warn: process %d exited\n", p.Process.Pid)
+			return nil
+		}
+		return err
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("ptrace cont err: %v", err)
 	}
 
 	wpid, status, err := p.wait(p.Process.Pid, syscall.WSTOPPED)
+	if err != nil {
+		return fmt.Errorf("wait error: %v", err)
+	}
 	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
-	return err
+	return nil
 }
 
 func descStatus(status *syscall.WaitStatus) string {
@@ -796,10 +805,12 @@ func (p *DebuggedProcess) Frame(idx int) error {
 
 func (p *DebuggedProcess) wait(pid, options int) (int, *syscall.WaitStatus, error) {
 	var s syscall.WaitStatus
-	if (p.Process.Pid != pid) || (options != 0) {
+	if p.Process.Pid != pid {
 		wpid, err := syscall.Wait4(pid, &s, syscall.WALL|options, nil)
 		return wpid, &s, err
 	}
+
+	// If we get here, it might be the zombie process issue mentioned in the comments
 	// If we call wait4/waitpid on a thread that is the leader of its group,
 	// with options == 0, while ptracing and the thread leader has exited leaving
 	// zombies of its own then waitpid hangs forever this is apparently intended
@@ -817,11 +828,12 @@ func (p *DebuggedProcess) wait(pid, options int) (int, *syscall.WaitStatus, erro
 			return 0, nil, err
 		}
 		if wpid != 0 {
-			return wpid, &s, err
+			return wpid, &s, nil
 		}
 		if status(pid, p.Command) == statusZombie {
 			return pid, nil, nil
 		}
+		fmt.Printf("wait4, pid: %d, wpid: %d, status: %v\n", pid, wpid, s)
 		time.Sleep(200 * time.Millisecond)
 	}
 }
