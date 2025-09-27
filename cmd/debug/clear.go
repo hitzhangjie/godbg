@@ -42,7 +42,8 @@ var clearCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// 检查有没有线程停在当前断点处
+
+		// 是否有线程需要rewind pc
 		bpStoppedThreads, err := target.DBPProcess.ThreadStoppedAtBreakpoint()
 		if err != nil {
 			return fmt.Errorf("检查线程停在断点处失败: %v", err)
