@@ -57,7 +57,7 @@ var setRegCmd = &cobra.Command{
 				fieldFound = true
 
 				// 写回寄存器
-				err = target.DBPProcess.WriteRegister(regs)
+				err = target.DBPProcess.WriteRegister(dbp.Process.Pid, regs)
 				if err != nil {
 					return fmt.Errorf("failed to write register %s: %v", regName, err)
 				}

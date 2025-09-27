@@ -42,6 +42,24 @@ var clearCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// 检查有没有线程停在当前断点处
+		bpStoppedThreads, err := target.DBPProcess.ThreadStoppedAtBreakpoint()
+		if err != nil {
+			return fmt.Errorf("检查线程停在断点处失败: %v", err)
+		}
+		for tid, bpAddr := range bpStoppedThreads {
+			if bpAddr != brk.Addr {
+				continue
+			}
+			regs, err := target.DBPProcess.ReadRegister(tid)
+			if err != nil {
+				return fmt.Errorf("读取寄存器失败: %v", err)
+			}
+			regs.SetPC(regs.PC() - 1)
+			if err = target.DBPProcess.WriteRegister(tid, regs); err != nil {
+				return fmt.Errorf("写入寄存器失败: %v", err)
+			}
+		}
 		fmt.Println("移除断点成功")
 		return nil
 	},

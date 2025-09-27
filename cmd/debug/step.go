@@ -45,7 +45,7 @@ var stepCmd = &cobra.Command{
 
 		// isn't a breakpoint
 		if buf[0] != 0xcc {
-			if _, err = dbp.SingleStep(); err != nil {
+			if _, err = dbp.SingleStep(dbp.Process.Pid); err != nil {
 				return fmt.Errorf("single step err: %v", err)
 			}
 			return nil
@@ -56,7 +56,7 @@ var stepCmd = &cobra.Command{
 		if err == target.ErrBreakpointNotExisted {
 			// this 0xcc isn't patched by debugger, and this 0xcc is already executed,
 			// just single step
-			_, err = dbp.SingleStep()
+			_, err = dbp.SingleStep(dbp.Process.Pid)
 			return err
 		}
 		if err != nil {
@@ -67,12 +67,12 @@ var stepCmd = &cobra.Command{
 
 		// rewind pc by 1
 		regs.SetPC(regs.PC() - 1)
-		if err = dbp.WriteRegister(regs); err != nil {
+		if err = dbp.WriteRegister(dbp.Process.Pid, regs); err != nil {
 			return err
 		}
 
 		// single step
-		if _, err = dbp.SingleStep(); err != nil {
+		if _, err = dbp.SingleStep(dbp.Process.Pid); err != nil {
 			return fmt.Errorf("single step error: %v", err)
 		}
 		return nil

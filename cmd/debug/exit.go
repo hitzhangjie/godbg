@@ -32,7 +32,7 @@ func Cleanup() {
 	)
 
 	// 先清理掉之前创建的断点
-	fmt.Fprintf(os.Stdout, "before detached, clearall created breakpoints.")
+	fmt.Printf("before detached, clearall created breakpoints.")
 	if err := target.DBPProcess.ClearAll(); err != nil {
 		fmt.Fprintf(os.Stderr, "clearall failed err: %v\n", err)
 	}

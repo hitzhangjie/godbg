@@ -82,7 +82,7 @@ func NewDebuggedProcess(cmd string, args []string, kind Kind) (*DebuggedProcess,
 	return &target, nil
 }
 
-// AttachTargetProcess trace一个目标进程（准确地说是线程）
+// AttachTargetProcess 跟踪一个目标进程，包括其内部包含的线程，以及后续会创建的线程
 func AttachTargetProcess(pid int) (p *DebuggedProcess, err error) {
 	p = &DebuggedProcess{
 		Process:     nil,
@@ -324,9 +324,9 @@ func checkPid(pid int) bool {
 
 // --------------------------------------------------------------------
 
-func (p *DebuggedProcess) IsBreakpoint(addr uintptr) bool {
-	_, ok := p.Breakpoints[addr]
-	return ok
+func (p *DebuggedProcess) Breakpoint(addr uintptr) (*Breakpoint, bool) {
+	bp, ok := p.Breakpoints[addr]
+	return bp, ok
 }
 
 // ListBreakpoints 列出所有断点
@@ -350,6 +350,11 @@ func (p *DebuggedProcess) AddBreakpoint(addr uintptr) (*Breakpoint, error) {
 		err        error
 		n          int
 	)
+
+	bp, ok := p.Breakpoint(addr)
+	if ok {
+		return bp, nil
+	}
 
 	err = p.ExecPtrace(func() error {
 		pid := DBPProcess.Process.Pid
@@ -410,16 +415,63 @@ func (p *DebuggedProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
 
 // ClearAll 删除所有已添加的断点
 func (p *DebuggedProcess) ClearAll() error {
-	err := p.ExecPtrace(func() error {
-		for _, b := range p.Breakpoints {
-			_, err := p.ClearBreakpoint(b.Addr)
-			if err != nil {
-				return fmt.Errorf("clear breakpoint %d, err: %v", b.Addr, err)
-			}
+	// 首先检查所有线程是否停在断点处
+	stopped, err := p.ThreadStoppedAtBreakpoint()
+	if err != nil {
+		return fmt.Errorf("check thread breakpoints error: %v", err)
+	}
+
+	for _, bp := range p.Breakpoints {
+		if _, err := p.ClearBreakpoint(bp.Addr); err != nil {
+			return fmt.Errorf("clear breakpoint at %#x error: %v", bp.Addr, err)
 		}
-		return nil
-	})
-	return err
+	}
+
+	// 如果有线程停在断点处，需要先处理这些线程
+	// 回退所有停在断点的线程的PC
+	for tid := range stopped {
+		regs, err := p.ReadRegister(tid)
+		if err != nil {
+			return fmt.Errorf("read register for thread %d: %v", tid, err)
+		}
+
+		// 回退PC到断点指令之前
+		regs.SetPC(regs.PC() - 1)
+		if err = p.WriteRegister(tid, regs); err != nil {
+			return fmt.Errorf("write register for thread %d: %v", tid, err)
+		}
+	}
+
+	return nil
+}
+
+// ThreadStoppedAtBreakpoint 检查所有线程是否停在断点处
+func (p *DebuggedProcess) ThreadStoppedAtBreakpoint() (map[int]uintptr, error) {
+	threadStoppedAtBP := make(map[int]uintptr)
+
+	if len(p.Threads) == 0 {
+		return threadStoppedAtBP, nil
+	}
+
+	for tid, thread := range p.Threads {
+		regs, err := p.ReadRegister(thread.Tid)
+		if err != nil {
+			// 线程可能已经退出，跳过
+			if err == syscall.ESRCH {
+				fmt.Fprintf(os.Stderr, "warn: thread %d exited\n", tid)
+				continue
+			}
+			return nil, fmt.Errorf("read register for thread %d: %v", tid, err)
+		}
+
+		// 检查PC-1位置是否有断点（因为断点指令已经执行）
+		pc := regs.PC()
+		if bp, exists := p.Breakpoints[uintptr(pc-1)]; exists {
+			threadStoppedAtBP[tid] = bp.Addr
+		}
+	}
+
+	return threadStoppedAtBP, nil
 }
 
 func (p *DebuggedProcess) Continue() error {
@@ -436,28 +488,40 @@ func (p *DebuggedProcess) Continue() error {
 		if err != nil {
 			return fmt.Errorf("ptrace cont thread %d err: %v", thread.Tid, err)
 		}
+		fmt.Printf("thread %d continued succ\n", thread.Tid)
 	}
+
 	// wait any thread stopped
 	wpid, status, err := p.wait(p.Process.Pid, syscall.WSTOPPED)
 	if err != nil {
 		return fmt.Errorf("wait error: %v", err)
 	}
 	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
+	fmt.Printf("stop all threads now\n")
+
 	// if any thread stopped, then stop all threads again
 	for _, thread := range p.Threads {
-		err := p.ExecPtrace(func() error {
-			return syscall.PtraceSingleStep(thread.Tid)
-		})
-		if err != nil {
-			return fmt.Errorf("ptrace stop thread %d err: %v", thread.Tid, err)
+		if thread.Tid == wpid {
+			continue
 		}
+		err := p.ExecPtrace(func() error { return syscall.PtraceSingleStep(thread.Tid) })
+		if err != nil {
+			if err == syscall.ESRCH {
+				fmt.Fprintf(os.Stderr, "warn: thread %d exited\n", thread.Tid)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "ptrace stop thread %d err: %v", thread.Tid, err)
+		} else {
+			fmt.Printf("thread %d stopped succ\n", thread.Tid)
+		}
+		go func() {
+			_, status, err := p.wait(thread.Tid, syscall.WSTOPPED)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "wait error: %v", err)
+			}
+			fmt.Printf("thread %d status: %v\n", thread.Tid, descStatus(status))
+		}()
 	}
-	// wait any thread stopped
-	wpid, status, err = p.wait(p.Process.Pid, syscall.WSTOPPED)
-	if err != nil {
-		return fmt.Errorf("wait error: %v", err)
-	}
-	fmt.Printf("thread %d status: %v\n", wpid, descStatus(status))
 	return nil
 }
 
@@ -479,9 +543,9 @@ func descStatus(status *syscall.WaitStatus) string {
 }
 
 // SingleStep 执行一条指令
-func (p *DebuggedProcess) SingleStep() (*syscall.WaitStatus, error) {
+func (p *DebuggedProcess) SingleStep(pid int) (*syscall.WaitStatus, error) {
 	err := p.ExecPtrace(func() error {
-		return syscall.PtraceSingleStep(p.Process.Pid)
+		return syscall.PtraceSingleStep(pid)
 	})
 	if err != nil {
 		return nil, err
@@ -491,7 +555,6 @@ func (p *DebuggedProcess) SingleStep() (*syscall.WaitStatus, error) {
 	var (
 		wstatus syscall.WaitStatus
 		rusage  syscall.Rusage
-		pid     = p.Process.Pid
 	)
 	_, err = syscall.Wait4(pid, &wstatus, syscall.WALL, &rusage)
 	if err != nil {
@@ -721,9 +784,8 @@ func (p *DebuggedProcess) ReadRegister(pid int) (*syscall.PtraceRegs, error) {
 }
 
 // WriteRegister 设置寄存器reg的值为value
-func (p *DebuggedProcess) WriteRegister(regs *syscall.PtraceRegs) error {
+func (p *DebuggedProcess) WriteRegister(pid int, regs *syscall.PtraceRegs) error {
 	err := p.ExecPtrace(func() error {
-		pid := p.Process.Pid
 		return syscall.PtraceSetRegs(pid, regs)
 	})
 	return err
