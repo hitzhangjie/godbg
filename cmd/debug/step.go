@@ -37,14 +37,9 @@ var stepCmd = &cobra.Command{
 			return fmt.Errorf("get regs error: %v", err)
 		}
 
-		buf := make([]byte, 1)
-		n, err := dbp.ReadMemory(uintptr(regs.PC()-1), buf)
-		if err != nil || n != 1 {
-			return fmt.Errorf("peek text error: %v, bytes: %d", err, n)
-		}
-
 		// isn't a breakpoint
-		if buf[0] != 0xcc {
+		_, ok := dbp.Breakpoint(uintptr(regs.PC() - 1))
+		if !ok {
 			if _, err = dbp.SingleStep(dbp.Process.Pid); err != nil {
 				return fmt.Errorf("single step err: %v", err)
 			}
@@ -52,7 +47,7 @@ var stepCmd = &cobra.Command{
 		}
 
 		// is a breakpoint
-		brk, err := dbp.ClearBreakpoint(uintptr(regs.PC() - 1))
+		brk, err := dbp.RestoreInstruction(uintptr(regs.PC() - 1))
 		if err == target.ErrBreakpointNotExisted {
 			// this 0xcc isn't patched by debugger, and this 0xcc is already executed,
 			// just single step

@@ -388,9 +388,36 @@ var (
 	ErrBreakpointNotExisted = errors.New("breakpoint not existed")
 )
 
-// ClearBreakpoint 删除addr处的断点
+// ClearBreakpoint 移除指定地址处断点，并rewind受影响的thread
 func (p *DebuggedProcess) ClearBreakpoint(addr uintptr) (*Breakpoint, error) {
+	brk, err := p.RestoreInstruction(addr)
+	if err != nil {
+		return nil, err
+	}
 
+	// 是否有线程需要rewind pc
+	bpStoppedThreads, err := p.ThreadStoppedAtBreakpoint()
+	if err != nil {
+		return nil, fmt.Errorf("检查线程停在断点处失败: %v", err)
+	}
+	for tid, bpAddr := range bpStoppedThreads {
+		if bpAddr != brk.Addr {
+			continue
+		}
+		regs, err := p.ReadRegister(tid)
+		if err != nil {
+			return nil, fmt.Errorf("读取寄存器失败: %v", err)
+		}
+		regs.SetPC(regs.PC() - 1)
+		if err = p.WriteRegister(tid, regs); err != nil {
+			return nil, fmt.Errorf("写入寄存器失败: %v", err)
+		}
+	}
+	return brk, nil
+}
+
+// 移除断点，还原指令数据+从断点列表中移除
+func (p *DebuggedProcess) RestoreInstruction(addr uintptr) (*Breakpoint, error) {
 	brk, ok := p.Breakpoints[addr]
 	if !ok {
 		return nil, ErrBreakpointNotExisted
@@ -422,7 +449,7 @@ func (p *DebuggedProcess) ClearAll() error {
 	}
 
 	for _, bp := range p.Breakpoints {
-		if _, err := p.ClearBreakpoint(bp.Addr); err != nil {
+		if _, err := p.RestoreInstruction(bp.Addr); err != nil {
 			return fmt.Errorf("clear breakpoint at %#x error: %v", bp.Addr, err)
 		}
 	}

@@ -46,7 +46,7 @@ var continueCmd = &cobra.Command{
 
 			// - 还原指令数据
 			if _, cleared := bpCleared[bpAddr]; !cleared {
-				_, err := dbp.ClearBreakpoint(bpAddr)
+				_, err := dbp.RestoreInstruction(bpAddr)
 				if err != nil && err != target.ErrBreakpointNotExisted {
 					return fmt.Errorf("clear breakpoint at %#x error: %v", bpAddr, err)
 				}
