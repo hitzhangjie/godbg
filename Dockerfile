@@ -21,3 +21,6 @@ RUN git clone https://github.com/cli/cli /tmp.cli && \
 RUN mkdir /root/workspaces
 
 WORKDIR /root/workspaces/godbg
+
+# sshd
+EXPOSE 22
