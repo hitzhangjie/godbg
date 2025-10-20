@@ -531,6 +531,12 @@ func (p *DebuggedProcess) Continue() error {
 		if thread.Tid == wpid {
 			continue
 		}
+		// 这里我们使用的是SINGLESTEP让线程执行一条指令后停下来，其实可以使用SIGSTOP代替，
+		// delve中使用的是SIGSTOP的方式, see: `syscall.Tgkill(tgid, tid, syscall.SIGSTOP)`.
+		//
+		// 实际上ptrace singlestep的方式可以让线程更加快速地停下来，tgkill发送SIGSTOP的方式和SINGLESTEP有区别:
+		// - SINGLESTEP方式会让线程执行一条指令后停下来；
+		// - SIGSTOP方式，如果tracee当前在执行系统调用，会在系统调用返回后暂停；如果在用户态模式，会在执行下条用户指令前暂停；
 		err := p.ExecPtrace(func() error { return syscall.PtraceSingleStep(thread.Tid) })
 		if err != nil {
 			if err == syscall.ESRCH {
