@@ -27,8 +27,8 @@ import (
 // coreCmd represents the core command
 var coreCmd = &cobra.Command{
 	Use:   "core <coredump> <executable>",
-	Short: "调试内核转储",
-	Long:  `调试内核转储`,
+	Short: "调试核心转储",
+	Long:  `调试核心转储`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return errors.New("参数非法")
